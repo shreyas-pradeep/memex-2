@@ -71,6 +71,34 @@ describe("useMemexStore", () => {
     expect(s.trails.some((t) => t.nodeIds.includes(id))).toBe(false);
   });
 
+  it("updateCard edits title, content and tags, and persists", () => {
+    const { id } = useMemexStore.getState().nodes[0];
+    useMemexStore
+      .getState()
+      .updateCard(id, { title: "Edited", content: "Body", tags: ["a", "b"] });
+    const node = useMemexStore.getState().nodes.find((n) => n.id === id)!;
+    expect(node.data).toMatchObject({ title: "Edited", content: "Body", tags: ["a", "b"] });
+    const saved = deserializeGraph(data.get(STORAGE_KEY)!);
+    expect(saved.nodes.find((n) => n.id === id)!.data.title).toBe("Edited");
+  });
+
+  it("updateCard ignores unknown ids and unchanged values", () => {
+    const before = useMemexStore.getState().nodes;
+    useMemexStore.getState().updateCard("missing", { title: "x" });
+    useMemexStore.getState().updateCard(before[0].id, { title: before[0].data.title });
+    expect(useMemexStore.getState().nodes).toBe(before);
+    expect(data.has(STORAGE_KEY)).toBe(false);
+  });
+
+  it("removeNodes (card delete button) leaves no dangling edges or trail refs", () => {
+    const id = useMemexStore.getState().edges[0].source;
+    useMemexStore.getState().removeNodes([id]);
+    const s = useMemexStore.getState();
+    expect(s.nodes.some((n) => n.id === id)).toBe(false);
+    expect(s.edges.some((e) => e.source === id || e.target === id)).toBe(false);
+    expect(s.trails.some((t) => t.nodeIds.includes(id))).toBe(false);
+  });
+
   it("rejects self-loops and duplicate connections", () => {
     const [a, b] = useMemexStore.getState().nodes.map((n) => n.id);
     const { onConnect } = useMemexStore.getState();

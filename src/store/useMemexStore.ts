@@ -20,6 +20,7 @@ import type {
   LinkOrigin,
   MemexGraphState,
   MemexNode,
+  MemexNodeData,
   Trail,
 } from "@/core/types";
 import { demoSeed } from "@/data/demo-seed";
@@ -95,6 +96,13 @@ function pick(s: MemexGraphState): MemexGraphState {
   };
 }
 
+/** Card fields that can be edited inline. */
+export type CardUpdate = Partial<Pick<MemexNodeData, "title" | "content" | "tags">>;
+
+function sameTags(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((t, i) => t === b[i]);
+}
+
 export interface MemexStore extends MemexGraphState {
   /** True once `hydrate()` has run on the client. */
   hydrated: boolean;
@@ -114,6 +122,8 @@ export interface MemexStore extends MemexGraphState {
   // Graph engine actions
   addNode: (node: MemexNode) => void;
   removeNodes: (ids: string[]) => void;
+  /** Updates a card's title, content and/or tags. No-op when nothing changes. */
+  updateCard: (id: string, data: CardUpdate) => void;
   connect: (
     source: string,
     target: string,
@@ -200,6 +210,26 @@ export const useMemexStore = create<MemexStore>()((set, get) => {
 
     addNode: (node) => commit(addNodePure(pick(get()), node)),
     removeNodes: (ids) => commit(removeNodesPure(pick(get()), ids)),
+    updateCard: (id, data) => {
+      const state = get();
+      const node = state.nodes.find((n) => n.id === id);
+      if (!node) return;
+      const unchanged =
+        (data.title === undefined || data.title === node.data.title) &&
+        (data.content === undefined || data.content === node.data.content) &&
+        (data.tags === undefined || sameTags(data.tags, node.data.tags));
+      if (unchanged) return;
+      const patch: CardUpdate = {};
+      if (data.title !== undefined) patch.title = data.title;
+      if (data.content !== undefined) patch.content = data.content;
+      if (data.tags !== undefined) patch.tags = [...data.tags];
+      commit({
+        ...pick(state),
+        nodes: state.nodes.map((n) =>
+          n.id === id ? { ...n, data: { ...n.data, ...patch } } : n,
+        ),
+      });
+    },
     connect: (source, target, origin, data) =>
       commit(connectNodes(pick(get()), source, target, origin, data)),
     createTrail: (trail) => commit(createTrailPure(pick(get()), trail)),
