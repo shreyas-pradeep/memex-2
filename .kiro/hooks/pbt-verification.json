@@ -1,0 +1,14 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Verify Graph Invariants (Property-Based Tests)",
+      "trigger": "PostFileSave",
+      "matcher": "src/core/(?!__tests__).*\\.ts$",
+      "action": {
+        "type": "command",
+        "command": "npx vitest run src/core/__tests__/graph.property.test.ts"
+      }
+    }
+  ]
+}

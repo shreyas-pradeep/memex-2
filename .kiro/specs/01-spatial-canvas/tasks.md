@@ -15,9 +15,16 @@
   - Connect `src/core/graph-engine.ts` to `@xyflow/react` state with automatic `localStorage` persistence and a "Reset to 1945 Demo Seed" action.
   - _Requirements: 1.2, 3.1_
 
-- [-] 4. Build the 60fps Microfilm Spatial Canvas & Custom SVG Nodes/Edges
+- [x] 4. Build the 60fps Microfilm Spatial Canvas & Custom SVG Nodes/Edges
   - Create `src/components/canvas/MicrofilmShaders.tsx` containing the global `<svg>` defs for `#microfilm-duotone` grain filter and glowing `#amber-glow` (`#FFB236`) and `#violet-glow` (`#B388FF`) edge filters.
   - Create `src/components/canvas/ArchivalCardNode.tsx` with 1945 microfilm registration crosshairs (`+`), monospace archival ID header, serif title, tag pills, and Framer Motion spring hover physics.
   - Create `src/components/canvas/AssociativePulseEdge.tsx` rendering smooth bezier curves in `#FFB236` (human) or `#B388FF` (Ghost AI) with an animated `stroke-dasharray` thought pulse and hover rationale badge.
   - Create `src/components/canvas/MemexCanvas.tsx` integrating `@xyflow/react`, dark obsidian dot matrix (`#090A0F`), minimap, and floating command HUD.
   - _Requirements: 1.1, 1.2, 1.3, 2.1_
+
+  - [x] 5. Add double-click inline editing and card deletion
+  - Add `updateCard(id, data)` action to `src/store/useMemexStore.ts` to update title, content, or tags.
+  - Update `src/components/canvas/ArchivalCardNode.tsx`: double-click toggles `isEditing` mode with dark-mode input/textarea styled to `#141721`, commits on blur/Escape via `updateCard`.
+  - Add hover `✕` delete button calling `deleteNode(id)` with smooth exit animation.
+  - Verify with `npx tsc --noEmit` and `npm test`, then commit: `feat(canvas): add double-click inline card editing and delete button`
+  - _Requirements: 1.1, 2.3_
