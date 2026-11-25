@@ -7,6 +7,10 @@ import type {
 } from "@/core/types";
 import { EDGE_COLORS } from "@/core/types";
 
+/** Default card size (px). Resizing replaces it via `style: { width, height }`. */
+const CARD_WIDTH = 320;
+const CARD_HEIGHT = 210;
+
 const node = (
   id: string,
   n: number,
@@ -17,6 +21,7 @@ const node = (
   id,
   type: "memexCard",
   position: { x, y },
+  style: { width: CARD_WIDTH, height: CARD_HEIGHT },
   data: { archivalId: `MEM-1945-${String(n).padStart(4, "0")}`, ...data },
 });
 

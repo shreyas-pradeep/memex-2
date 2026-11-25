@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type {
   Connection,
   EdgeChangeset,
+  NodeChange,
   NodeChangeset,
 } from "@xyflow/react";
 import {
@@ -42,8 +43,38 @@ function getStorage(): Storage | null {
 }
 
 /**
+ * Makes `style: { width, height }` the single source of truth for card size.
+ *
+ * `NodeResizer` emits dimension changes with `setAttributes`, which React Flow
+ * applies as `node.width` / `node.height`. Those attributes would outrank the
+ * (stale) seeded `style` size, so the new size is moved into `style` and the
+ * attributes are dropped. Nodes without a resize change are returned as-is.
+ */
+function moveSizeToStyle(
+  nodes: MemexNode[],
+  changes: NodeChange<MemexNode>[],
+): MemexNode[] {
+  const sizes = new Map<string, { width: number; height: number }>();
+  for (const c of changes) {
+    if (c.type === "dimensions" && c.setAttributes && c.dimensions) {
+      sizes.set(c.id, c.dimensions);
+    }
+  }
+  if (sizes.size === 0) return nodes;
+  return nodes.map((n) => {
+    const size = sizes.get(n.id);
+    if (!size) return n;
+    const { width, height, ...rest } = n;
+    void width;
+    void height;
+    return { ...rest, style: { ...n.style, width: size.width, height: size.height } };
+  });
+}
+
+/**
  * Drops React Flow runtime-only fields (selection, drag flag, measured size)
- * so persisted JSON contains only the archival graph.
+ * so persisted JSON contains only the archival graph. Card size lives in
+ * `style: { width, height }`.
  */
 function toPersistable(state: MemexGraphState): MemexGraphState {
   return {
@@ -75,13 +106,38 @@ export function persistGraph(state: MemexGraphState): void {
   }
 }
 
+export const DEFAULT_CARD_SIZE = { width: 320, height: 210 } as const;
+
+/**
+ * Gives cards saved before resizing existed (no `style` size, no `width` /
+ * `height`) the default size so they do not collapse. Sized cards are untouched.
+ */
+function withDefaultSizes(state: MemexGraphState): MemexGraphState {
+  return {
+    ...state,
+    nodes: state.nodes.map((n) => {
+      const hasWidth = n.width !== undefined || n.style?.width !== undefined;
+      const hasHeight = n.height !== undefined || n.style?.height !== undefined;
+      if (hasWidth && hasHeight) return n;
+      return {
+        ...n,
+        style: {
+          ...(hasWidth ? {} : { width: DEFAULT_CARD_SIZE.width }),
+          ...(hasHeight ? {} : { height: DEFAULT_CARD_SIZE.height }),
+          ...n.style,
+        },
+      };
+    }),
+  };
+}
+
 /** Reads the stored graph, or `null` when absent, unavailable or corrupt. */
 export function loadPersistedGraph(): MemexGraphState | null {
   const storage = getStorage();
   if (!storage) return null;
   try {
     const json = storage.getItem(STORAGE_KEY);
-    return json === null ? null : deserializeGraph(json);
+    return json === null ? null : withDefaultSizes(deserializeGraph(json));
   } catch {
     return null;
   }
@@ -174,20 +230,29 @@ export const useMemexStore = create<MemexStore>()((set, get) => {
       // for nodes that are already gone).
       let next = pick(get());
       if (removed.length > 0) next = removeNodesPure(next, removed);
-      next = { ...next, nodes: changes.applyTo(next.nodes) };
+      const all = changes.toArray();
+      next = {
+        ...next,
+        nodes: moveSizeToStyle(changes.applyTo(next.nodes), all),
+      };
 
-      // Persist only durable changes. Drag frames (`dragging: true`), selection
-      // and measurement changes update the store at 60fps without touching
-      // localStorage; the final drag frame (`dragging: false`) persists.
-      const durable = changes
-        .toArray()
-        .some(
+      // Persist only durable changes. Drag and resize frames, selection and
+      // measurement changes update the store at 60fps without touching
+      // localStorage; the final drag frame (`dragging: false`) and the resize
+      // end (`resizing: false`) persist.
+      const resizingFrame = all.some(
+        (c) => c.type === "dimensions" && c.resizing === true,
+      );
+      const durable =
+        !resizingFrame &&
+        all.some(
           (c) =>
             c.type === "remove" ||
             c.type === "add" ||
             c.type === "replace" ||
             c.type === "update" ||
             c.type === "data" ||
+            (c.type === "dimensions" && c.resizing === false) ||
             (c.type === "position" && c.dragging !== true),
         );
 
@@ -246,7 +311,7 @@ export const useMemexStore = create<MemexStore>()((set, get) => {
     exportJson: () => serializeGraph(toPersistable(pick(get()))),
 
     importJson: (json) => {
-      const graph = deserializeGraph(json);
+      const graph = withDefaultSizes(deserializeGraph(json));
       set(graph);
       persistGraph(graph);
     },

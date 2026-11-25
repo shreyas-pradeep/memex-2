@@ -29,25 +29,35 @@ const isoArb = fc
 const coordArb = fc.integer({ min: -100_000, max: 100_000 }).map((n) => n + 0);
 const unit = fc.double({ min: 0, max: 1, noNaN: true }).map((n) => n + 0);
 
+// Card dimensions as persisted by the resizer: `style: { width, height }`.
+// Integers only (resizer output is rounded; `+ 0` guards against -0).
+const dimensionArb = fc.integer({ min: 280, max: 4000 }).map((n) => n + 0);
+const styleArb = fc.record({ width: dimensionArb, height: dimensionArb });
+
 const nodeArb = (id: string): fc.Arbitrary<MemexNode> =>
-  fc.record({
-    id: fc.constant(id),
-    type: fc.constant("memexCard" as const),
-    position: fc.record({ x: coordArb, y: coordArb }),
-    data: fc.record(
-      {
-        archivalId: fc.string(),
-        title: fc.string(),
-        content: fc.string(),
-        cardType: fc.constantFrom("note", "quote", "artifact", "ghost"),
-        tags: fc.array(fc.string(), { maxLength: 4 }),
-        createdAt: isoArb,
-        imageUrl: fc.string(),
-        confidence: unit,
-      },
-      { requiredKeys: ["archivalId", "title", "content", "cardType", "tags", "createdAt"] },
-    ),
-  });
+  fc.record(
+    {
+      id: fc.constant(id),
+      type: fc.constant("memexCard" as const),
+      position: fc.record({ x: coordArb, y: coordArb }),
+      style: styleArb,
+      data: fc.record(
+        {
+          archivalId: fc.string(),
+          title: fc.string(),
+          content: fc.string(),
+          cardType: fc.constantFrom("note", "quote", "artifact", "ghost"),
+          tags: fc.array(fc.string(), { maxLength: 4 }),
+          createdAt: isoArb,
+          imageUrl: fc.string(),
+          confidence: unit,
+        },
+        { requiredKeys: ["archivalId", "title", "content", "cardType", "tags", "createdAt"] },
+      ),
+    },
+    // `style` is optional: legacy cards have no stored size.
+    { requiredKeys: ["id", "type", "position", "data"] },
+  );
 
 const trailArb = (ids: string[], i: number): fc.Arbitrary<Trail> =>
   fc.record({

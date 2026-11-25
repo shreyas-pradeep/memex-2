@@ -99,6 +99,36 @@ body {
   opacity: 0.9;
 }
 
+/* Card resize controls: circular pill handles with a soft accent glow.
+   `--resize-accent` is set per card by NodeResizer (amber for human cards,
+   violet for ghost cards). Selectors are prefixed with `.react-flow` so they
+   outrank the library stylesheet regardless of import order. */
+.react-flow .react-flow__resize-control {
+  --resize-accent: var(--accent-human);
+}
+.react-flow .react-flow__resize-control.handle {
+  width: 12px;
+  height: 12px;
+  border-radius: 9999px;
+  background-color: var(--card-surface);
+  border: 1px solid color-mix(in srgb, var(--resize-accent) 70%, transparent);
+  box-shadow:
+    0 0 0 2px rgba(9, 10, 15, 0.9),
+    0 0 8px 1px color-mix(in srgb, var(--resize-accent) 45%, transparent);
+  transition:
+    background-color 150ms ease,
+    box-shadow 150ms ease;
+}
+.react-flow .react-flow__resize-control.handle:hover {
+  background-color: var(--resize-accent);
+  box-shadow:
+    0 0 0 2px rgba(9, 10, 15, 0.9),
+    0 0 14px 2px color-mix(in srgb, var(--resize-accent) 65%, transparent);
+}
+.react-flow .react-flow__resize-control.line {
+  border-color: color-mix(in srgb, var(--resize-accent) 35%, transparent);
+}
+
 /* Thought pulse travelling along an associative edge (pathLength = 100). */
 @keyframes memex-pulse {
   from {

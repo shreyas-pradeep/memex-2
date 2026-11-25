@@ -56,7 +56,8 @@ function ArchivalHud() {
     addNode({
       id: `n-${crypto.randomUUID().slice(0, 8)}`,
       type: "memexCard",
-      position: { x: center.x - 140 + offset, y: center.y - 80 + offset },
+      position: { x: center.x - 160 + offset, y: center.y - 105 + offset },
+      style: { width: 320, height: 210 },
       data: {
         archivalId: nextArchivalId(nodes),
         title: "Untitled Note",
@@ -134,6 +135,7 @@ function Flow() {
       nodeTypes={nodeTypes}
       edgeTypes={edgeTypes}
       connectionMode={ConnectionMode.Loose}
+      nodeDragThreshold={4}
       fitView
       fitViewOptions={FIT_OPTIONS}
       minZoom={0.15}

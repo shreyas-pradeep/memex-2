@@ -60,6 +60,74 @@ describe("useMemexStore", () => {
     expect(saved.nodes[0]).not.toHaveProperty("dragging");
   });
 
+  it("seeds every card with the default 320x210 size", () => {
+    for (const n of useMemexStore.getState().nodes) {
+      expect(n.style).toMatchObject({ width: 320, height: 210 });
+    }
+  });
+
+  it("stores resized dimensions in style and persists only when the resize ends", () => {
+    const id = useMemexStore.getState().nodes[0].id;
+    const { onNodesChange } = useMemexStore.getState();
+
+    onNodesChange(
+      new NodeChangeset([
+        {
+          type: "dimensions",
+          id,
+          resizing: true,
+          setAttributes: true,
+          dimensions: { width: 410, height: 260 },
+        },
+        { type: "position", id, position: { x: -5, y: 7 } },
+      ]),
+    );
+    const live = useMemexStore.getState().nodes[0];
+    expect(live.style).toMatchObject({ width: 410, height: 260 });
+    expect(live.width).toBeUndefined();
+    expect(live.height).toBeUndefined();
+    expect(data.has(STORAGE_KEY)).toBe(false);
+
+    onNodesChange(
+      new NodeChangeset([
+        { type: "dimensions", id, resizing: false, dimensions: { width: 410, height: 260 } },
+      ]),
+    );
+    const saved = deserializeGraph(data.get(STORAGE_KEY)!).nodes.find((n) => n.id === id)!;
+    expect(saved.style).toEqual({ width: 410, height: 260 });
+    expect(saved.position).toEqual({ x: -5, y: 7 });
+    expect(saved).not.toHaveProperty("measured");
+    expect(saved).not.toHaveProperty("resizing");
+    expect(saved).not.toHaveProperty("width");
+  });
+
+  it("does not persist plain measurement changes", () => {
+    const id = useMemexStore.getState().nodes[0].id;
+    useMemexStore.getState().onNodesChange(
+      new NodeChangeset([
+        { type: "dimensions", id, dimensions: { width: 320, height: 210 } },
+      ]),
+    );
+    expect(data.has(STORAGE_KEY)).toBe(false);
+  });
+
+  it("gives legacy persisted cards without a size the default size on hydrate", () => {
+    const legacy = deserializeGraph(JSON.stringify(demoSeed));
+    const stripped = {
+      ...legacy,
+      nodes: legacy.nodes.map((n) => {
+        const { style, ...rest } = n;
+        void style;
+        return rest;
+      }),
+    };
+    data.set(STORAGE_KEY, JSON.stringify(stripped));
+    useMemexStore.getState().hydrate();
+    for (const n of useMemexStore.getState().nodes) {
+      expect(n.style).toEqual({ width: 320, height: 210 });
+    }
+  });
+
   it("purges edges and trail references when React Flow removes a node", () => {
     const id = useMemexStore.getState().edges[0].source;
     useMemexStore.getState().onNodesChange(
