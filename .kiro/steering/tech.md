@@ -15,3 +15,7 @@ inclusion: always
 ## Code Rules
 - Separate pure graph/trail mathematical logic into `src/core/` (100% pure TypeScript functions, zero React dependencies) so `fast-check` Property-Based Tests can test them directly.
 - Keep UI components in `src/components/`.
+
+## Git Workflow Automation
+- After completing any task or sub-task where `npm test` and `npx tsc --noEmit` pass cleanly, the agent SHALL automatically stage and commit the changes using the shell tool with a descriptive conventional commit message (e.g., `feat(spec-01): task 4 - spatial canvas and shaders`).
+- Do not run `git push` automatically; only commit locally so the developer can review before pushing.

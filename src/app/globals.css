@@ -1,26 +1,121 @@
 @import "tailwindcss";
 
+/* Memex 2.0: "1945 Amber & Phantom Violet". Dark mode only. */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --canvas-bg: #090a0f;
+  --card-surface: #141721;
+  --card-border: rgba(255, 178, 54, 0.18);
+  --accent-human: #ffb236;
+  --accent-ghost: #b388ff;
+  --text-primary: #f4f1ea;
+  --text-muted: #8e94a5;
+  color-scheme: dark;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-canvas-bg: var(--canvas-bg);
+  --color-card-surface: var(--card-surface);
+  --color-card-border: var(--card-border);
+  --color-accent-human: var(--accent-human);
+  --color-accent-ghost: var(--accent-ghost);
+  --color-text-primary: var(--text-primary);
+  --color-text-muted: var(--text-muted);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --font-serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua",
+    Georgia, "Times New Roman", serif;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+html,
+body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: var(--canvas-bg);
+  color: var(--text-primary);
+}
+
+/* ---------------------------------------------------------------------------
+   React Flow theming
+   --------------------------------------------------------------------------- */
+.react-flow {
+  background: var(--canvas-bg);
+  --xy-background-color: var(--canvas-bg);
+  --xy-edge-stroke-default: var(--accent-human);
+  --xy-selection-background-color: rgba(255, 178, 54, 0.06);
+  --xy-selection-border: 1px dashed rgba(255, 178, 54, 0.6);
+  --xy-controls-button-background-color: #10131b;
+  --xy-controls-button-background-color-hover: #1b2030;
+  --xy-controls-button-color: var(--text-primary);
+  --xy-controls-button-color-hover: var(--accent-human);
+  --xy-controls-button-border-color: rgba(255, 178, 54, 0.18);
+  --xy-controls-box-shadow: 0 0 0 1px rgba(255, 178, 54, 0.18);
+}
+
+.react-flow__attribution {
+  background: transparent !important;
+  color: var(--text-muted);
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+}
+.react-flow__attribution a {
+  color: var(--text-muted);
+}
+
+.react-flow__minimap {
+  border: 1px solid rgba(255, 178, 54, 0.18);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.react-flow__controls {
+  border-radius: 2px;
+  overflow: hidden;
+}
+.react-flow__controls-button {
+  border-radius: 0;
+}
+
+/* Connection handles: tiny square registration pads. */
+.react-flow .memex-handle {
+  width: 8px;
+  height: 8px;
+  min-width: 0;
+  min-height: 0;
+  border-radius: 1px;
+  background: var(--canvas-bg);
+  border: 1px solid var(--handle-accent, var(--accent-human));
+  opacity: 0.45;
+  transition:
+    opacity 150ms ease,
+    background-color 150ms ease;
+}
+.react-flow .memex-handle:hover,
+.react-flow .memex-handle.connectingfrom,
+.react-flow .memex-handle.connectingto {
+  opacity: 1;
+  background: var(--handle-accent, var(--accent-human));
+}
+.react-flow__node:hover .memex-handle {
+  opacity: 0.9;
+}
+
+/* Thought pulse travelling along an associative edge (pathLength = 100). */
+@keyframes memex-pulse {
+  from {
+    stroke-dashoffset: 0;
+  }
+  to {
+    stroke-dashoffset: -100;
   }
 }
+.memex-edge-pulse {
+  animation-name: memex-pulse;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@media (prefers-reduced-motion: reduce) {
+  .memex-edge-pulse {
+    animation: none;
+  }
 }

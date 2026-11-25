@@ -1,0 +1,12 @@
+{
+  "name": "Verify Graph Invariants (Property-Based Tests)",
+  "description": "Runs the Vitest + fast-check Property-Based Testing suite whenever core graph logic is updated to guarantee zero dangling edges or trail corruption.",
+  "trigger": {
+    "type": "onFileSave",
+    "filePattern": "src/core/**/*.ts"
+  },
+  "action": {
+    "type": "runCommand",
+    "command": "npx vitest run src/core/__tests__/graph.property.test.ts"
+  }
+}
