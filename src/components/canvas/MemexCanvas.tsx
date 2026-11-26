@@ -16,7 +16,12 @@ import {
 } from "@xyflow/react";
 import { buildGhostEdges } from "@/core/ghost-engine";
 import { nextArchivalId } from "@/core/graph-engine";
-import { EDGE_COLORS, type AssociativeEdge, type MemexNode } from "@/core/types";
+import {
+  EDGE_COLORS,
+  type AssociativeEdge,
+  type GhostDiscovery,
+  type MemexNode,
+} from "@/core/types";
 import {
   selectGhostCount,
   selectGhostEngineMode,
@@ -52,15 +57,21 @@ const FIT_OPTIONS = { padding: 0.2, duration: CAMERA_MS } as const;
 
 // Module-scope selectors: stable identities, each subscribes to one slice so a
 // change elsewhere in the store never re-renders the canvas.
-const selectNodes = (s: MemexStore) => s.nodes;
-const selectEdges = (s: MemexStore) => s.edges;
-const selectNodeCount = (s: MemexStore) => s.nodes.length;
-const selectEdgeCount = (s: MemexStore) => s.edges.length;
+// Shared empty fallbacks keep selector results referentially stable, so a
+// missing slice (stale or partial saved state) never crashes or re-renders.
+const NO_NODES: MemexNode[] = [];
+const NO_EDGES: AssociativeEdge[] = [];
+const NO_DISCOVERIES: GhostDiscovery[] = [];
+const selectNodes = (s: MemexStore): MemexNode[] => s.nodes ?? NO_NODES;
+const selectEdges = (s: MemexStore): AssociativeEdge[] => s.edges ?? NO_EDGES;
+const selectNodeCount = (s: MemexStore) => s.nodes?.length ?? 0;
+const selectEdgeCount = (s: MemexStore) => s.edges?.length ?? 0;
 const selectOnNodesChange = (s: MemexStore) => s.onNodesChange;
 const selectOnEdgesChange = (s: MemexStore) => s.onEdgesChange;
 const selectOnConnect = (s: MemexStore) => s.onConnect;
 const selectHydrated = (s: MemexStore) => s.hydrated;
-const selectDiscoveries = (s: MemexStore) => s.ghostDiscoveries;
+const selectDiscoveries = (s: MemexStore): GhostDiscovery[] =>
+  s.ghostDiscoveries ?? NO_DISCOVERIES;
 
 function minimapNodeColor(node: MemexNode): string {
   return node.data.cardType === "ghost" ? EDGE_COLORS.ghost : EDGE_COLORS.human;
@@ -236,7 +247,7 @@ const Flow = memo(function Flow() {
   // Ghost synapses are derived display edges; memoized on the two source arrays
   // so card drags never rebuild them.
   const edges = useMemo(
-    () => (discoveries.length === 0 ? realEdges : [...realEdges, ...buildGhostEdges(discoveries)]),
+    () => ((discoveries?.length ?? 0) === 0 ? realEdges : [...realEdges, ...buildGhostEdges(discoveries)]),
     [realEdges, discoveries],
   );
   const onNodesChange = useMemexStore(selectOnNodesChange);

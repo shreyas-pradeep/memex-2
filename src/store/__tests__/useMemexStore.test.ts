@@ -135,6 +135,22 @@ describe("useMemexStore", () => {
     }
   });
 
+  it("keeps a legacy save that lacks trails and ghostDiscoveries instead of crashing or resetting", () => {
+    const legacy = { nodes: demoSeed.nodes, edges: demoSeed.edges };
+    data.set(STORAGE_KEY, JSON.stringify(legacy));
+    useMemexStore.getState().hydrate();
+    const s = useMemexStore.getState();
+    expect(s.nodes).toEqual(demoSeed.nodes);
+    expect(s.trails).toEqual([]);
+    expect(s.ghostDiscoveries).toEqual([]);
+  });
+
+  it("falls back to the seed when a saved slice has the wrong type", () => {
+    data.set(STORAGE_KEY, JSON.stringify({ nodes: [], edges: [], ghostDiscoveries: "oops" }));
+    useMemexStore.getState().hydrate();
+    expect(useMemexStore.getState().nodes).toEqual(demoSeed.nodes);
+  });
+
   it("purges edges and trail references when React Flow removes a node", () => {
     const id = useMemexStore.getState().edges[0].source;
     useMemexStore.getState().onNodesChange(

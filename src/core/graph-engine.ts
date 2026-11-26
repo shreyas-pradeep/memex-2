@@ -147,19 +147,35 @@ export function serializeGraph(state: MemexGraphState): string {
   });
 }
 
-/** Parses JSON produced by `serializeGraph`. Throws on malformed input. */
+/**
+ * Parses JSON produced by `serializeGraph`. Throws on malformed input.
+ *
+ * `nodes` and `edges` are required. `trails` and `ghostDiscoveries` default to
+ * `[]` when absent so graphs saved by older versions still load; a present but
+ * non-array value is still rejected. Unknown keys are dropped.
+ */
 export function deserializeGraph(json: string): MemexGraphState {
   const raw: unknown = JSON.parse(json);
-  if (typeof raw !== "object" || raw === null) {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
     throw new Error("Invalid graph JSON: expected an object");
   }
   const obj = raw as Record<string, unknown>;
-  for (const key of ["nodes", "edges", "trails", "ghostDiscoveries"] as const) {
+  for (const key of ["nodes", "edges"] as const) {
     if (!Array.isArray(obj[key])) {
       throw new Error(`Invalid graph JSON: "${key}" must be an array`);
     }
   }
-  return obj as unknown as MemexGraphState;
+  for (const key of ["trails", "ghostDiscoveries"] as const) {
+    if (obj[key] !== undefined && !Array.isArray(obj[key])) {
+      throw new Error(`Invalid graph JSON: "${key}" must be an array`);
+    }
+  }
+  return {
+    nodes: obj.nodes,
+    edges: obj.edges,
+    trails: obj.trails ?? [],
+    ghostDiscoveries: obj.ghostDiscoveries ?? [],
+  } as MemexGraphState;
 }
 
 export interface AutoLayoutOptions {
