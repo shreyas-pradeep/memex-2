@@ -12,6 +12,7 @@ import {
   connectNodes,
   createTrail as createTrailPure,
   deserializeGraph,
+  nextArchivalId,
   removeDiscovery,
   removeNodes as removeNodesPure,
   serializeGraph,
@@ -367,6 +368,14 @@ export interface MemexStore extends MemexGraphState {
 
   // Graph engine actions
   addNode: (node: MemexNode) => void;
+  /**
+   * Adds an ingested source (cards plus edges) in one update and persists once.
+   * Cards whose ID already exists are dropped; archival IDs are reassigned so
+   * they are unique on the canvas; edges are validated by the graph engine.
+   * Then starts one local ghost scan (the debounced auto-scan is cancelled).
+   * Returns the IDs of the cards actually added.
+   */
+  ingestSource: (nodes: MemexNode[], edges: AssociativeEdge[]) => string[];
   removeNodes: (ids: string[]) => void;
   /** Updates a card's title, content, tags, image and/or event date. No-op when nothing changes. */
   updateCard: (id: string, data: CardUpdate) => void;
@@ -522,6 +531,35 @@ export const useMemexStore = create<MemexStore>()((set, get) => {
         // Auto-scans stay local so card creation never spends API quota.
         void get().triggerGhostScan({ live: false });
       }, GHOST_AUTOSCAN_MS);
+    },
+    ingestSource: (incoming, incomingEdges) => {
+      let graph = pick(get());
+      const added: string[] = [];
+      for (const node of incoming) {
+        const fresh: MemexNode = {
+          ...node,
+          data: { ...node.data, archivalId: nextArchivalId(graph.nodes) },
+        };
+        const next = addNodePure(graph, fresh);
+        if (next !== graph) added.push(node.id);
+        graph = next;
+      }
+      if (added.length === 0) return [];
+      const addedSet = new Set(added);
+      for (const e of incomingEdges) {
+        if (!addedSet.has(e.source) || !addedSet.has(e.target)) continue;
+        graph = connectNodes(graph, e.source, e.target, "human", {
+          rationale: e.data?.rationale ?? "",
+          strength: e.data?.strength ?? 0.5,
+        });
+      }
+      commit(graph);
+      // One scan: drop any pending debounced one, then scan locally (no API quota).
+      cancelGhostAutoScan();
+      const scan = () => void get().triggerGhostScan({ live: false });
+      if (scanInFlight) void scanInFlight.then(scan);
+      else scan();
+      return added;
     },
     removeNodes: (ids) => commit(removeNodesPure(pick(get()), ids)),
     updateCard: (id, data) => {

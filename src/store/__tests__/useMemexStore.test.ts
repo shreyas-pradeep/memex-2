@@ -485,3 +485,54 @@ describe("useMemexStore ghost engine", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
+
+describe("ingestSource (Platen Scanner)", () => {
+  beforeEach(() => {
+    installLocalStorage();
+    useMemexStore.getState().resetToSeed();
+    cancelGhostAutoScan();
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("adds unique cards and edges, persists once, and triggers exactly one local scan", async () => {
+    const { distillSourceText, pickIngestionBase } = await import("@/core/ingestion-engine");
+    const scan = vi.fn(() => Promise.resolve());
+    useMemexStore.setState({ triggerGhostScan: scan });
+    const setItem = vi.spyOn(localStorage, "setItem");
+    const before = useMemexStore.getState().nodes;
+    const text = 'Memory systems. “A trail of associations links every memory.” It was 40% faster.';
+    const d = distillSourceText("Src", text, pickIngestionBase(before), {
+      existingIds: before.map((n) => n.id),
+    });
+    const ids = useMemexStore.getState().ingestSource(d.nodes, d.edges);
+    expect(ids).toEqual(d.nodes.map((n) => n.id));
+    const after = useMemexStore.getState();
+    expect(after.nodes).toHaveLength(before.length + d.nodes.length);
+    expect(new Set(after.nodes.map((n) => n.id)).size).toBe(after.nodes.length);
+    expect(new Set(after.nodes.map((n) => n.data.archivalId)).size).toBe(after.nodes.length);
+    expect(after.edges.length).toBeGreaterThanOrEqual(d.edges.length);
+    expect(setItem.mock.calls.filter(([k]) => k === STORAGE_KEY)).toHaveLength(1);
+    expect(deserializeGraph(localStorage.getItem(STORAGE_KEY)!).nodes).toHaveLength(after.nodes.length);
+    expect(scan).toHaveBeenCalledTimes(1);
+    expect(scan).toHaveBeenCalledWith({ live: false });
+
+    // No second (debounced) scan follows.
+    vi.useFakeTimers();
+    await vi.advanceTimersByTimeAsync(GHOST_AUTOSCAN_MS * 2);
+    vi.useRealTimers();
+    expect(scan).toHaveBeenCalledTimes(1);
+
+    // Re-ingesting the same cards adds nothing and does not scan again.
+    expect(useMemexStore.getState().ingestSource(d.nodes, d.edges)).toEqual([]);
+    expect(scan).toHaveBeenCalledTimes(1);
+  });
+
+  it("drops cards whose ids already exist", () => {
+    useMemexStore.setState({ triggerGhostScan: vi.fn(() => Promise.resolve()) });
+    const existing = useMemexStore.getState().nodes[0];
+    const ids = useMemexStore.getState().ingestSource([{ ...existing }], []);
+    expect(ids).toEqual([]);
+  });
+});

@@ -38,6 +38,7 @@ import { TrailPlaybackDock } from "../trails/TrailPlaybackDock";
 import { TrailSelectorMenu } from "../trails/TrailSelectorMenu";
 import { AddCardModal, type NewCardInput } from "./AddCardModal";
 import { ArchivalCardNode } from "./ArchivalCardNode";
+import { IngestionPlatenModal } from "./IngestionPlatenModal";
 import { AssociativePulseEdge } from "./AssociativePulseEdge";
 
 // Module-scope so React Flow never sees a new object identity between renders.
@@ -108,6 +109,38 @@ function ArchivalHud() {
   const [modalOpen, setModalOpen] = useState(false);
   const closeModal = useCallback(() => setModalOpen(false), []);
   const openModal = useCallback(() => setModalOpen(true), []);
+
+  const [platenOpen, setPlatenOpen] = useState(false);
+  const closePlaten = useCallback(() => setPlatenOpen(false), []);
+  const openPlaten = useCallback(() => setPlatenOpen(true), []);
+  // Shortcut `I` opens the platen; ignored while typing or with modifier keys.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key.toLowerCase() !== "i" || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
+      if (e.repeat || e.defaultPrevented) return;
+      const t = e.target;
+      if (
+        t instanceof HTMLElement &&
+        (t.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName))
+      ) {
+        return;
+      }
+      e.preventDefault();
+      setPlatenOpen(true);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+  const onIngested = useCallback(
+    (ids: string[]) => {
+      if (ids.length === 0) return;
+      // Wait a frame so React Flow has the new nodes before the camera glides.
+      requestAnimationFrame(() =>
+        void fitView({ nodes: ids.map((id) => ({ id })), padding: 0.25, duration: CAMERA_MS }),
+      );
+    },
+    [fitView],
+  );
 
   const addCard = useCallback(
     (input: NewCardInput) => {
@@ -182,6 +215,16 @@ function ArchivalHud() {
 
         <button
           type="button"
+          onClick={openPlaten}
+          aria-keyshortcuts="I"
+          className="mt-2 flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-accent-human bg-accent-human px-3 py-2.5 font-mono text-[11px] font-bold uppercase tracking-[0.16em] text-[#090A0F] shadow-[inset_0_1px_0_rgba(255,255,255,0.35),0_2px_0_rgba(0,0,0,0.65),0_0_18px_rgba(255,178,54,0.35)] transition-[box-shadow,transform] duration-100 hover:brightness-110 active:translate-y-[2px] focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-accent-human"
+        >
+          + Ingest Source (Platen)
+          <kbd className="rounded border border-[#090A0F]/40 px-1 text-[10px]">I</kbd>
+        </button>
+
+        <button
+          type="button"
           onClick={wakeGhost}
           aria-busy={scanning}
           className={`${ghostButtonClass} mt-2 flex w-full items-center justify-center gap-2`}
@@ -235,6 +278,7 @@ function ArchivalHud() {
         </div>
       </div>
       <AISettingsModal open={settingsOpen} onClose={closeSettings} onKeyChange={setUserKey} />
+      <IngestionPlatenModal open={platenOpen} onClose={closePlaten} onIngested={onIngested} />
       <AddCardModal open={modalOpen} onClose={closeModal} onSubmit={addCard} />
     </Panel>
   );

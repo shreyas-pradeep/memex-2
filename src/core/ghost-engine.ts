@@ -38,7 +38,7 @@ const TAG_WEIGHT = 0.2;
 /** Term-frequency weight of a term found in a title or a tag. */
 const TITLE_TAG_TF = 3;
 
-const STOP_WORDS: ReadonlySet<string> = new Set(
+export const STOP_WORDS: ReadonlySet<string> = new Set(
   (
     "a about above after again all also an and any are as at be because been before being below between " +
     "both but by can could did do does doing down during each few for from further had has have having he " +
@@ -57,7 +57,7 @@ export type TermVector = ReadonlyMap<string, number>;
  * Small deterministic stemmer: folds plurals, then strips one `-ing`, `-ed` or
  * `-ly` suffix from longer words ("linking", "linked" and "links" all become "link").
  */
-function stem(word: string): string {
+export function stem(word: string): string {
   let w = word;
   if (w.length > 4 && w.endsWith("ies")) return `${w.slice(0, -3)}y`;
   if (w.length > 4 && /(?:ss|x|ch|sh)es$/.test(w)) w = w.slice(0, -2);

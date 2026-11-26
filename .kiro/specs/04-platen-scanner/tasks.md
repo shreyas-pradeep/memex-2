@@ -1,0 +1,23 @@
+# Implementation Plan: 04-platen-scanner
+
+- [x] 1. Author the spec
+  - Create `requirements.md`, `design.md` and `tasks.md` in `.kiro/specs/04-platen-scanner/`.
+  - _Requirements: 1.1 to 7.5_
+- [x] 2. Implement the pure ingestion engine
+  - Export `stem` and `STOP_WORDS` from `src/core/ghost-engine.ts` for reuse.
+  - Create `src/core/ingestion-engine.ts`: `extractPublicationYear`, `extractTags`, `stripMarkdown`, `parseSourceFile`, `parsePastedText`, `distillSourceText`, `radialPlacement`, `pickIngestionBase`.
+  - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 4.1, 4.2, 4.3, 4.4, 5.1, 5.2, 5.3, 5.4, 7.1, 7.2, 7.3, 7.4_
+- [x] 3. Add the store action
+  - Add `ingestSource(nodes, edges)` to `src/store/useMemexStore.ts`: unique archival IDs, duplicate-ID rejection, edge validation through the graph engine, one persist, one local ghost scan, debounced scan cancelled.
+  - _Requirements: 6.1, 6.2, 6.4_
+- [x] 4. Build the Platen modal and HUD trigger
+  - Create `src/components/canvas/IngestionPlatenModal.tsx` (File Drop and Direct Raw Text tabs, inline errors, scan animation, focus handling).
+  - Add the "+ INGEST SOURCE (PLATEN)" button, the `I` shortcut and the 800 ms `fitView` to `src/components/canvas/MemexCanvas.tsx`.
+  - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 6.3, 7.5_
+- [x] 5. Property-based and unit tests
+  - Create `src/core/__tests__/ingestion.property.test.ts` implementing Properties 1 to 6 (300 runs each) plus parsing unit tests.
+  - Add `ingestSource` tests to `src/store/__tests__/useMemexStore.test.ts`.
+  - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.6, 3.7, 4.1, 4.2, 5.2, 6.1, 6.2, 6.4, 7.1, 7.2, 7.3, 7.4_
+- [x] 6. Verify and commit
+  - Run `npx tsc --noEmit`, `npx vitest run`, `npx eslint src` and `npm run build`; commit `feat(spec-04): implement platen scanner multi-format ingestion engine`.
+  - _Requirements: all_
