@@ -84,7 +84,7 @@ export const seedNodes: MemexNode[] = [
     cardType: "note",
     content:
       "In 1968 Douglas Engelbart demonstrated the mouse, hypertext links and shared-screen collaboration. He had read As We May Think as a young Navy radar technician in 1945 and credited it as the seed of his work.",
-    tags: ["engelbart", "1968", "hypertext", "legacy"],
+    tags: ["engelbart", "1968", "hypertext", "legacy", "memex", "bush"],
     createdAt: "1945-12-01T12:00:00.000Z",
     date: "1968-12-09",
   }),
@@ -147,26 +147,12 @@ export const seedTrails: Trail[] = [
   },
 ];
 
-export const seedGhostDiscoveries: GhostDiscovery[] = [
-  {
-    id: "gd-1",
-    sourceId: "n-vemap",
-    targetId: "n-eniac",
-    rationale: "Both are landmark computing machines, analog then electronic digital.",
-    confidence: 0.72,
-    trailId: "t-ghost-machines",
-    discoveredAt: "1945-12-03T09:05:00.000Z",
-  },
-  {
-    id: "gd-2",
-    sourceId: "n-trails",
-    targetId: "n-ghost",
-    rationale: "Trails are an early model of knowledge as a network.",
-    confidence: 0.88,
-    trailId: "t-ghost-machines",
-    discoveredAt: "1945-12-03T09:05:00.000Z",
-  },
-];
+/**
+ * Empty on purpose: the seed's ghost links are already drawn as `ghost` edges.
+ * Waking the Ghost Engine (or adding a card) discovers the remaining bridges,
+ * e.g. "As We May Think" <-> "Engelbart's Mother of All Demos".
+ */
+export const seedGhostDiscoveries: GhostDiscovery[] = [];
 
 export const demoSeed: MemexGraphState = {
   nodes: seedNodes,

@@ -39,6 +39,8 @@ export type AssociativeEdgeData = {
   /** Link strength in [0, 1]. */
   strength: number;
   trailId?: string;
+  /** Set only on display-only edges that render a `GhostDiscovery` as a synapse. */
+  discoveryId?: string;
 };
 
 /** Canvas node: `{ id, position: {x, y}, type, data }`. */

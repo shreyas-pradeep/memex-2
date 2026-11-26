@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useState } from "react";
+import { memo, useCallback, useState } from "react";
 import {
   BaseEdge,
   EdgeLabelRenderer,
@@ -11,10 +11,14 @@ import {
   type InternalNode,
 } from "@xyflow/react";
 import { AnimatePresence, motion } from "framer-motion";
+import { confidencePercent } from "@/core/ghost-engine";
 import { EDGE_COLORS, type AssociativeEdge } from "@/core/types";
 import { DIM_OPACITY, useEdgeTrailState } from "@/store/trail-selectors";
+import { useMemexStore, type MemexStore } from "@/store/useMemexStore";
 
 const SPRING = { type: "spring", stiffness: 300, damping: 28 } as const;
+
+const selectSelectGhost = (s: MemexStore) => s.selectGhostDiscovery;
 
 /** Fallback card size before React Flow has measured the node. */
 const DEFAULT_W = 280;
@@ -76,6 +80,16 @@ function AssociativePulseEdgeImpl({
 }: EdgeProps<AssociativeEdge>) {
   const [hovered, setHovered] = useState(false);
   const trailState = useEdgeTrailState(source, target);
+  // Ghost synapses are display edges derived from a `GhostDiscovery`.
+  const discoveryId = data?.discoveryId;
+  const isSynapse = discoveryId !== undefined;
+  const synapseSelected = useMemexStore(
+    useCallback(
+      (s: MemexStore) => discoveryId !== undefined && s.selectedGhostDiscoveryId === discoveryId,
+      [discoveryId],
+    ),
+  );
+  const selectGhost = useMemexStore(selectSelectGhost);
   const sourceNode = useInternalNode(source);
   const targetNode = useInternalNode(target);
 
@@ -112,7 +126,7 @@ function AssociativePulseEdgeImpl({
   // Stronger associations pulse faster (4.2s down to 1.8s per traverse).
   const pulseSeconds = 4.2 - 2.4 * strength;
   const trailActive = trailState === "active";
-  const active = hovered || selected === true || trailActive;
+  const active = hovered || selected === true || trailActive || synapseSelected;
 
   return (
     <g
@@ -162,6 +176,44 @@ function AssociativePulseEdgeImpl({
       />
 
       <EdgeLabelRenderer>
+        {isSynapse ? (
+          <div
+            className="nodrag nopan"
+            style={{
+              position: "absolute",
+              transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
+              pointerEvents: "none",
+              zIndex: 1001,
+              opacity: trailState === "dim" ? DIM_OPACITY : 1,
+            }}
+          >
+            <motion.button
+              type="button"
+              initial={{ opacity: 0, scale: 0.85 }}
+              animate={{ opacity: 1, scale: synapseSelected ? 1.08 : 1 }}
+              whileHover={{ scale: 1.08 }}
+              whileTap={{ scale: 0.96 }}
+              transition={SPRING}
+              onClick={() => selectGhost(discoveryId)}
+              onMouseEnter={() => setHovered(true)}
+              onMouseLeave={() => setHovered(false)}
+              aria-label={`Ghost synapse, ${confidencePercent(strength)} percent confidence. Open inspector.`}
+              aria-pressed={synapseSelected}
+              className="cursor-pointer whitespace-nowrap bg-card-surface px-2.5 py-1 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-accent-ghost"
+              style={{
+                pointerEvents: "all",
+                color,
+                border: `1px solid ${color}`,
+                borderRadius: 999,
+                boxShadow: synapseSelected
+                  ? `0 6px 20px rgba(0, 0, 0, 0.7), 0 0 18px ${color}99`
+                  : `0 4px 14px rgba(0, 0, 0, 0.65), 0 0 10px ${color}44`,
+              }}
+            >
+              ⚡ {confidencePercent(strength)}% SYNAPSE
+            </motion.button>
+          </div>
+        ) : null}
         <div
           className="nodrag nopan"
           style={{
@@ -172,7 +224,7 @@ function AssociativePulseEdgeImpl({
           }}
         >
           <AnimatePresence>
-            {hovered || selected === true ? (
+            {!isSynapse && (hovered || selected === true) ? (
               <motion.div
                 key="pill"
                 initial={{ opacity: 0, scale: 0.92 }}

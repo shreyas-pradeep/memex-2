@@ -1,8 +1,15 @@
 import { NodeChangeset } from "@xyflow/react";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ghostDiscoveryId } from "@/core/ghost-engine";
 import { deserializeGraph } from "@/core/graph-engine";
 import { demoSeed } from "@/data/demo-seed";
-import { STORAGE_KEY, useMemexStore } from "../useMemexStore";
+import {
+  GHOST_AUTOSCAN_MS,
+  STORAGE_KEY,
+  cancelGhostAutoScan,
+  loadDismissedGhostIds,
+  useMemexStore,
+} from "../useMemexStore";
 
 /** Minimal in-memory Storage so the store can persist under Node. */
 function installLocalStorage(): Map<string, string> {
@@ -313,5 +320,86 @@ describe("useMemexStore trail playback", () => {
     expect(json).not.toContain("isTimelineOpen");
     expect(json).not.toContain("highlightedNodeId");
     useMemexStore.getState().setTimelineOpen(true);
+  });
+});
+
+describe("useMemexStore ghost engine", () => {
+  const BRIDGE = ghostDiscoveryId("n-engelbart", "n-memex");
+
+  beforeEach(() => {
+    const data = installLocalStorage();
+    useMemexStore.getState().resetToSeed();
+    data.clear();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    cancelGhostAutoScan();
+  });
+
+  it("scans the seed, finds bridges, and keeps scanning state out of the export", () => {
+    useMemexStore.getState().triggerGhostScan();
+    const s = useMemexStore.getState();
+    expect(s.isGhostScanning).toBe(true);
+    expect(s.ghostDiscoveries.length).toBeGreaterThanOrEqual(1);
+    expect(s.ghostDiscoveries.map((d) => d.id)).toContain(BRIDGE);
+    const exported = JSON.parse(s.exportJson()) as Record<string, unknown>;
+    expect(Object.keys(exported).sort()).toEqual(["edges", "ghostDiscoveries", "nodes", "trails"]);
+  });
+
+  it("accept turns the synapse into a human edge and removes the discovery", () => {
+    useMemexStore.getState().triggerGhostScan();
+    const before = useMemexStore.getState().edges.length;
+    useMemexStore.getState().selectGhostDiscovery(BRIDGE);
+    expect(useMemexStore.getState().selectedGhostDiscoveryId).toBe(BRIDGE);
+    useMemexStore.getState().acceptGhostDiscovery(BRIDGE);
+    const s = useMemexStore.getState();
+    expect(s.edges).toHaveLength(before + 1);
+    expect(s.edges.some((e) => e.data?.origin === "human" && e.id.includes("n-engelbart"))).toBe(true);
+    expect(s.ghostDiscoveries.some((d) => d.id === BRIDGE)).toBe(false);
+    expect(s.selectedGhostDiscoveryId).toBeNull();
+  });
+
+  it("dismissed discoveries do not return on later scans and survive a reload", () => {
+    useMemexStore.getState().triggerGhostScan();
+    useMemexStore.getState().dismissGhostDiscovery(BRIDGE);
+    useMemexStore.getState().triggerGhostScan();
+    expect(useMemexStore.getState().ghostDiscoveries.some((d) => d.id === BRIDGE)).toBe(false);
+    expect(loadDismissedGhostIds()).toEqual([BRIDGE]);
+    useMemexStore.getState().hydrate();
+    useMemexStore.getState().triggerGhostScan();
+    expect(useMemexStore.getState().ghostDiscoveries.some((d) => d.id === BRIDGE)).toBe(false);
+  });
+
+  it("deleting a card cleanses its discoveries and closes the inspector", () => {
+    useMemexStore.getState().triggerGhostScan();
+    useMemexStore.getState().selectGhostDiscovery(BRIDGE);
+    useMemexStore.getState().removeNodes(["n-engelbart"]);
+    const s = useMemexStore.getState();
+    expect(s.ghostDiscoveries.some((d) => d.sourceId === "n-engelbart" || d.targetId === "n-engelbart")).toBe(false);
+    expect(s.selectedGhostDiscoveryId).toBeNull();
+  });
+
+  it("Walk Ghost Trail forges a ghost trail and starts playback", () => {
+    useMemexStore.getState().triggerGhostScan();
+    const id = useMemexStore.getState().convertDiscoveryToTrail(BRIDGE);
+    const s = useMemexStore.getState();
+    expect(id).not.toBeNull();
+    expect(s.activeTrailId).toBe(id);
+    expect(s.trails.find((t) => t.id === id)?.origin).toBe("ghost");
+    expect(s.selectedGhostDiscoveryId).toBeNull();
+  });
+
+  it("a burst of new cards causes one debounced scan", () => {
+    vi.useFakeTimers();
+    const scan = vi.fn();
+    useMemexStore.setState({ triggerGhostScan: scan });
+    const seed = useMemexStore.getState().nodes[0];
+    for (let i = 0; i < 4; i++) {
+      useMemexStore.getState().addNode({ ...seed, id: `n-burst-${i}` });
+      vi.advanceTimersByTime(GHOST_AUTOSCAN_MS / 2);
+    }
+    expect(scan).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(GHOST_AUTOSCAN_MS);
+    expect(scan).toHaveBeenCalledTimes(1);
   });
 });

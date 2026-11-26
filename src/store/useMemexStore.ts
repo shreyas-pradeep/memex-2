@@ -6,11 +6,13 @@ import type {
   NodeChangeset,
 } from "@xyflow/react";
 import {
+  acceptDiscovery,
   addNode as addNodePure,
   computeAutoLayout,
   connectNodes,
   createTrail as createTrailPure,
   deserializeGraph,
+  removeDiscovery,
   removeNodes as removeNodesPure,
   serializeGraph,
 } from "@/core/graph-engine";
@@ -30,9 +32,20 @@ import {
   getNextTrailIndex,
   getPrevTrailIndex,
 } from "@/core/trail-engine";
+import {
+  DEFAULT_GHOST_THRESHOLD,
+  detectGhostSynapses,
+  forgeGhostTrail,
+} from "@/core/ghost-engine";
 import { demoSeed } from "@/data/demo-seed";
 
 export const STORAGE_KEY = "memex-2:graph:v1";
+/** Dismissed ghost discovery IDs: a sorted JSON array, kept apart from the graph schema. */
+export const GHOST_DISMISSED_KEY = "memex-2:ghost-dismissed:v1";
+/** Quiet period after the last card creation before the proactive scan runs. */
+export const GHOST_AUTOSCAN_MS = 1200;
+/** Minimum time the scanning state stays visible, so the radar state is readable. */
+export const GHOST_SCAN_MIN_MS = 600;
 
 /** Fresh deep copy of the 1945 demo seed (never hands out the shared module object). */
 function freshSeed(): MemexGraphState {
@@ -149,6 +162,58 @@ export function loadPersistedGraph(): MemexGraphState | null {
   }
 }
 
+/** Dismissed discovery IDs; empty when absent, unavailable or corrupt. */
+export function loadDismissedGhostIds(): string[] {
+  const storage = getStorage();
+  if (!storage) return [];
+  try {
+    const raw: unknown = JSON.parse(storage.getItem(GHOST_DISMISSED_KEY) ?? "[]");
+    return Array.isArray(raw) ? raw.filter((x): x is string => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveDismissedGhostIds(ids: Iterable<string>): void {
+  const storage = getStorage();
+  if (!storage) return;
+  try {
+    storage.setItem(GHOST_DISMISSED_KEY, JSON.stringify([...new Set(ids)].sort()));
+  } catch {
+    // Quota exceeded or storage disabled: dismissals last for this session only.
+  }
+}
+
+function clearDismissedGhostIds(): void {
+  try {
+    getStorage()?.removeItem(GHOST_DISMISSED_KEY);
+  } catch {
+    // Storage unavailable: nothing to clear.
+  }
+}
+
+let autoScanTimer: ReturnType<typeof setTimeout> | undefined;
+let scanHoldTimer: ReturnType<typeof setTimeout> | undefined;
+
+/** Cancels a pending proactive scan (used on reset/import and by tests). */
+export function cancelGhostAutoScan(): void {
+  if (autoScanTimer !== undefined) clearTimeout(autoScanTimer);
+  autoScanTimer = undefined;
+}
+
+function sameDiscoveries(a: GhostDiscovery[], b: GhostDiscovery[]): boolean {
+  return (
+    a.length === b.length &&
+    a.every(
+      (d, i) =>
+        d.id === b[i].id &&
+        d.confidence === b[i].confidence &&
+        d.rationale === b[i].rationale &&
+        d.trailId === b[i].trailId,
+    )
+  );
+}
+
 function pick(s: MemexGraphState): MemexGraphState {
   return {
     nodes: s.nodes,
@@ -183,7 +248,24 @@ const IDLE_PLAYBACK = {
   isPlayingAuto: false,
 } as const;
 
+/** Ghost UI state. Session-only: never persisted or exported. */
+const IDLE_GHOST = { isGhostScanning: false, selectedGhostDiscoveryId: null } as const;
+
 export interface MemexStore extends MemexGraphState {
+  /** Session-only: true while the Ghost Engine scan indicator is showing. */
+  isGhostScanning: boolean;
+  /** Session-only: discovery open in the Synapse Inspector Drawer. */
+  selectedGhostDiscoveryId: string | null;
+  /** Scans the canvas for unconnected, non-dismissed bridges and stores them. */
+  triggerGhostScan: () => void;
+  selectGhostDiscovery: (id: string | null) => void;
+  /** Turns a ghost synapse into a human edge and removes the discovery. */
+  acceptGhostDiscovery: (id: string) => void;
+  /** Removes the discovery and keeps the pair from reappearing in later scans. */
+  dismissGhostDiscovery: (id: string) => void;
+  /** Forges a ghost trail from the discovery and starts playback; returns its ID. */
+  convertDiscoveryToTrail: (id: string) => string | null;
+
   /** Trail currently in cinematic playback, or `null`. Not persisted. */
   activeTrailId: string | null;
   /** Zero-based stop within the active trail. */
@@ -259,14 +341,20 @@ export const useMemexStore = create<MemexStore>()((set, get) => {
     }
     // Keep playback valid when the graph changes under it (e.g. a card in the
     // active trail is deleted).
+    // Close the inspector when its discovery disappears (deleted card, accept, dismiss).
+    const selected = current.selectedGhostDiscoveryId;
+    const selection =
+      selected !== null && !next.ghostDiscoveries.some((g) => g.id === selected)
+        ? { selectedGhostDiscoveryId: null }
+        : {};
     const trailId = current.activeTrailId;
     if (trailId !== null) {
       const trail = next.trails.find((t) => t.id === trailId);
       const index = trail ? clampTrailIndex(current.activeTrailIndex, trail.nodeIds.length) : -1;
-      if (index === -1) set({ ...next, ...IDLE_PLAYBACK });
-      else set({ ...next, activeTrailIndex: index });
+      if (index === -1) set({ ...next, ...IDLE_PLAYBACK, ...selection });
+      else set({ ...next, activeTrailIndex: index, ...selection });
     } else {
-      set(next);
+      set({ ...next, ...selection });
     }
     persistGraph(next);
   };
@@ -274,6 +362,7 @@ export const useMemexStore = create<MemexStore>()((set, get) => {
   return {
     ...freshSeed(),
     ...IDLE_PLAYBACK,
+    ...IDLE_GHOST,
     hydrated: false,
     isTimelineOpen: true,
     highlightedNodeId: null,
@@ -290,7 +379,13 @@ export const useMemexStore = create<MemexStore>()((set, get) => {
     },
 
     hydrate: () => {
-      set({ ...(loadPersistedGraph() ?? freshSeed()), ...IDLE_PLAYBACK, hydrated: true });
+      cancelGhostAutoScan();
+      set({
+        ...(loadPersistedGraph() ?? freshSeed()),
+        ...IDLE_PLAYBACK,
+        ...IDLE_GHOST,
+        hydrated: true,
+      });
     },
 
     onNodesChange: (changes) => {
@@ -345,7 +440,18 @@ export const useMemexStore = create<MemexStore>()((set, get) => {
       commit(connectNodes(pick(get()), source, target, "human"));
     },
 
-    addNode: (node) => commit(addNodePure(pick(get()), node)),
+    addNode: (node) => {
+      const before = get().nodes;
+      commit(addNodePure(pick(get()), node));
+      if (get().nodes === before) return;
+      // Proactive discovery: one timer, restarted by every new card, so a burst
+      // of cards causes a single scan.
+      cancelGhostAutoScan();
+      autoScanTimer = setTimeout(() => {
+        autoScanTimer = undefined;
+        get().triggerGhostScan();
+      }, GHOST_AUTOSCAN_MS);
+    },
     removeNodes: (ids) => commit(removeNodesPure(pick(get()), ids)),
     updateCard: (id, data) => {
       const state = get();
@@ -390,6 +496,60 @@ export const useMemexStore = create<MemexStore>()((set, get) => {
     setGhostDiscoveries: (ghostDiscoveries) =>
       commit({ ...pick(get()), ghostDiscoveries }),
     autoLayout: () => commit(computeAutoLayout(pick(get()))),
+
+    triggerGhostScan: () => {
+      const state = get();
+      set({ isGhostScanning: true });
+      const previous = new Map(state.ghostDiscoveries.map((d) => [d.id, d]));
+      const found = detectGhostSynapses(state.nodes, state.edges, DEFAULT_GHOST_THRESHOLD, {
+        dismissed: loadDismissedGhostIds(),
+        discoveredAt: new Date().toISOString(),
+      }).map((d) => {
+        const old = previous.get(d.id);
+        return old ? { ...d, discoveredAt: old.discoveredAt, ...(old.trailId ? { trailId: old.trailId } : {}) } : d;
+      });
+      if (!sameDiscoveries(found, state.ghostDiscoveries)) {
+        commit({ ...pick(state), ghostDiscoveries: found });
+      }
+      if (scanHoldTimer !== undefined) clearTimeout(scanHoldTimer);
+      scanHoldTimer = setTimeout(() => {
+        scanHoldTimer = undefined;
+        set({ isGhostScanning: false });
+      }, GHOST_SCAN_MIN_MS);
+    },
+
+    selectGhostDiscovery: (id) => {
+      const known = id !== null && get().ghostDiscoveries.some((g) => g.id === id);
+      set({ selectedGhostDiscoveryId: known ? id : null });
+    },
+
+    acceptGhostDiscovery: (id) => commit(acceptDiscovery(pick(get()), id)),
+
+    dismissGhostDiscovery: (id) => {
+      const state = get();
+      if (!state.ghostDiscoveries.some((g) => g.id === id)) return;
+      saveDismissedGhostIds([...loadDismissedGhostIds(), id]);
+      commit(removeDiscovery(pick(state), id));
+    },
+
+    convertDiscoveryToTrail: (id) => {
+      const state = get();
+      const discovery = state.ghostDiscoveries.find((g) => g.id === id);
+      if (!discovery) return null;
+      const trail = forgeGhostTrail(discovery, state.nodes, new Date().toISOString());
+      const graph = createTrailPure(pick(state), trail);
+      const stored = graph.trails.find((t) => t.id === trail.id);
+      if (!stored || stored.nodeIds.length < 2) return null;
+      commit({
+        ...graph,
+        ghostDiscoveries: graph.ghostDiscoveries.map((g) =>
+          g.id === id ? { ...g, trailId: trail.id } : g,
+        ),
+      });
+      set({ selectedGhostDiscoveryId: null });
+      get().setActiveTrail(trail.id);
+      return trail.id;
+    },
 
     setActiveTrail: (trailId) => {
       if (trailId === null) return set({ ...IDLE_PLAYBACK });
@@ -452,7 +612,9 @@ export const useMemexStore = create<MemexStore>()((set, get) => {
 
     resetToSeed: () => {
       const seed = freshSeed();
-      set({ ...seed, ...IDLE_PLAYBACK });
+      cancelGhostAutoScan();
+      clearDismissedGhostIds();
+      set({ ...seed, ...IDLE_PLAYBACK, ...IDLE_GHOST });
       persistGraph(seed);
     },
 
@@ -460,7 +622,8 @@ export const useMemexStore = create<MemexStore>()((set, get) => {
 
     importJson: (json) => {
       const graph = withDefaultSizes(deserializeGraph(json));
-      set({ ...graph, ...IDLE_PLAYBACK });
+      cancelGhostAutoScan();
+      set({ ...graph, ...IDLE_PLAYBACK, ...IDLE_GHOST });
       persistGraph(graph);
     },
   };

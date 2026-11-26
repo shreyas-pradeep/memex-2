@@ -6,6 +6,7 @@ import type {
   MemexNode,
   Trail,
 } from "./types";
+import { removeNodeFromDiscoveries } from "./ghost-engine";
 import { removeNodeFromTrail } from "./trail-engine";
 
 /**
@@ -61,9 +62,7 @@ export function removeNodes(
     trails: state.trails.map((t) =>
       [...doomed].reduce<Trail>((acc, id) => removeNodeFromTrail(acc, id), t),
     ),
-    ghostDiscoveries: state.ghostDiscoveries.filter(
-      (g) => !doomed.has(g.sourceId) && !doomed.has(g.targetId),
-    ),
+    ghostDiscoveries: removeNodeFromDiscoveries(state.ghostDiscoveries, doomed),
   };
 }
 
@@ -101,6 +100,30 @@ export function connectNodes(
     data: { rationale: "", strength: 0.5, ...data, origin },
   };
   return { ...state, edges: [...state.edges, edge] };
+}
+
+/** Removes one ghost discovery (state unchanged when the ID is unknown). */
+export function removeDiscovery(state: MemexGraphState, discoveryId: string): MemexGraphState {
+  if (!state.ghostDiscoveries.some((g) => g.id === discoveryId)) return state;
+  return {
+    ...state,
+    ghostDiscoveries: state.ghostDiscoveries.filter((g) => g.id !== discoveryId),
+  };
+}
+
+/**
+ * Accepts a ghost discovery: the synapse becomes a real human edge carrying the
+ * rationale and confidence, and the discovery is removed. State is unchanged
+ * when the discovery is unknown.
+ */
+export function acceptDiscovery(state: MemexGraphState, discoveryId: string): MemexGraphState {
+  const d = state.ghostDiscoveries.find((g) => g.id === discoveryId);
+  if (!d) return state;
+  const connected = connectNodes(state, d.sourceId, d.targetId, "human", {
+    rationale: d.rationale,
+    strength: d.confidence,
+  });
+  return removeDiscovery(connected, discoveryId);
 }
 
 /**

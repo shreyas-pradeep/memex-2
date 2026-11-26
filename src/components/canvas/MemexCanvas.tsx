@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useCallback, useEffect, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import {
   Background,
   BackgroundVariant,
@@ -14,9 +14,16 @@ import {
   type EdgeTypes,
   type NodeTypes,
 } from "@xyflow/react";
+import { buildGhostEdges } from "@/core/ghost-engine";
 import { nextArchivalId } from "@/core/graph-engine";
 import { EDGE_COLORS, type AssociativeEdge, type MemexNode } from "@/core/types";
+import {
+  selectGhostCount,
+  selectIsGhostScanning,
+  selectTriggerGhostScan,
+} from "@/store/ghost-selectors";
 import { useMemexStore, type MemexStore } from "@/store/useMemexStore";
+import { SynapseInspectorDrawer } from "../ghost/SynapseInspectorDrawer";
 import { ArchivalTimeline } from "../trails/ArchivalTimeline";
 import { TrailCameraDirector } from "../trails/TrailCameraDirector";
 import { TrailPlaybackDock } from "../trails/TrailPlaybackDock";
@@ -50,6 +57,7 @@ const selectOnNodesChange = (s: MemexStore) => s.onNodesChange;
 const selectOnEdgesChange = (s: MemexStore) => s.onEdgesChange;
 const selectOnConnect = (s: MemexStore) => s.onConnect;
 const selectHydrated = (s: MemexStore) => s.hydrated;
+const selectDiscoveries = (s: MemexStore) => s.ghostDiscoveries;
 
 function minimapNodeColor(node: MemexNode): string {
   return node.data.cardType === "ghost" ? EDGE_COLORS.ghost : EDGE_COLORS.human;
@@ -58,6 +66,9 @@ function minimapNodeColor(node: MemexNode): string {
 function ArchivalHud() {
   const nodeCount = useMemexStore(selectNodeCount);
   const edgeCount = useMemexStore(selectEdgeCount);
+  const scanning = useMemexStore(selectIsGhostScanning);
+  const ghostCount = useMemexStore(selectGhostCount);
+  const wakeGhost = useMemexStore(selectTriggerGhostScan);
   const { screenToFlowPosition, fitView } = useReactFlow<MemexNode, AssociativeEdge>();
 
   const [modalOpen, setModalOpen] = useState(false);
@@ -106,6 +117,7 @@ function ArchivalHud() {
   const addButtonClass = `${buttonBase} border-accent-human/50 bg-gradient-to-b from-[#161922] to-[#141721] text-accent-human hover:border-accent-human hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.1),0_2px_0_rgba(0,0,0,0.65),0_0_16px_rgba(255,178,54,0.3)] focus-visible:outline-accent-human`;
   const resetButtonClass = `${buttonBase} border-white/10 bg-gradient-to-b from-[#161922] to-[#090A0F] text-text-muted hover:border-accent-ghost/60 hover:text-accent-ghost hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_2px_0_rgba(0,0,0,0.65),0_0_16px_rgba(179,136,255,0.3)] focus-visible:outline-accent-ghost`;
 
+  const ghostButtonClass = `${buttonBase} border-accent-ghost/60 bg-gradient-to-b from-[#161922] to-[#141721] text-accent-ghost hover:border-accent-ghost hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.1),0_2px_0_rgba(0,0,0,0.65),0_0_16px_rgba(179,136,255,0.35)] focus-visible:outline-accent-ghost`;
   const readoutStyle = { textShadow: "0 0 10px rgba(255, 178, 54, 0.65)" } as const;
   const nodesLabel = String(nodeCount).padStart(3, "0");
   const edgesLabel = String(edgeCount).padStart(3, "0");
@@ -134,6 +146,29 @@ function ArchivalHud() {
           </button>
         </div>
 
+        <button
+          type="button"
+          onClick={wakeGhost}
+          aria-busy={scanning}
+          className={`${ghostButtonClass} mt-2 flex w-full items-center justify-center gap-2`}
+        >
+          <span
+            aria-hidden="true"
+            className={`relative inline-block h-2 w-2 rounded-full bg-accent-ghost ${scanning ? "animate-ping" : ""}`}
+            style={{ boxShadow: "0 0 8px 2px rgba(179, 136, 255, 0.6)" }}
+          />
+          {scanning ? "Scanning archive…" : "⚡ Wake Ghost Engine"}
+        </button>
+        <div
+          role="status"
+          aria-live="polite"
+          className="mt-1 text-center font-mono text-[10px] uppercase tracking-[0.16em] text-text-muted"
+        >
+          {scanning
+            ? "Radar sweep in progress"
+            : `${ghostCount} ${ghostCount === 1 ? "synapse" : "synapses"} detected`}
+        </div>
+
         <div
           role="status"
           aria-label={`${nodeCount} nodes, ${edgeCount} edges`}
@@ -150,7 +185,14 @@ function ArchivalHud() {
 
 const Flow = memo(function Flow() {
   const nodes = useMemexStore(selectNodes);
-  const edges = useMemexStore(selectEdges);
+  const realEdges = useMemexStore(selectEdges);
+  const discoveries = useMemexStore(selectDiscoveries);
+  // Ghost synapses are derived display edges; memoized on the two source arrays
+  // so card drags never rebuild them.
+  const edges = useMemo(
+    () => (discoveries.length === 0 ? realEdges : [...realEdges, ...buildGhostEdges(discoveries)]),
+    [realEdges, discoveries],
+  );
   const onNodesChange = useMemexStore(selectOnNodesChange);
   const onEdgesChange = useMemexStore(selectOnEdgesChange);
   const onConnect = useMemexStore(selectOnConnect);
@@ -224,12 +266,13 @@ export function MemexCanvas() {
   }, []);
 
   return (
-    <div style={{ width: "100vw", height: "100vh", background: "#090A0F" }}>
+    <div style={{ position: "relative", width: "100vw", height: "100vh", background: "#090A0F" }}>
       {hydrated ? (
         <ReactFlowProvider>
           <Flow />
         </ReactFlowProvider>
       ) : null}
+      {hydrated ? <SynapseInspectorDrawer /> : null}
     </div>
   );
 }
