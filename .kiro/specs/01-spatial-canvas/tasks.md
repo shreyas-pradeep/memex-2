@@ -28,3 +28,14 @@
   - Add hover `✕` delete button calling `deleteNode(id)` with smooth exit animation.
   - Verify with `npx tsc --noEmit` and `npm test`, then commit: `feat(canvas): add double-click inline card editing and delete button`
   - _Requirements: 1.1, 2.3_
+
+  - [x] 6. Implement interactive card resizing, fluid movement, and rounded chassis with state persistence
+  - Integrate `@xyflow/react` `<NodeResizer minWidth={280} minHeight={180} isVisible={selected} />` into `src/components/canvas/ArchivalCardNode.tsx`.
+  - Apply hybrid retro-futuristic styling: `rounded-2xl` (16px) outer chassis with `#141721` surface, `rounded-full` tag pills and badges, and `rounded-xl` text inputs, while keeping interior 1px registration crosshairs (`+`) and monospace metadata sharp and technical.
+  - Gesture & gesture conflict isolation: add `nodrag nowheel` to all text inputs, textareas, and scrollable body text containers so editing and scrolling never drags or zooms the canvas. Set `nodeDragThreshold={4}` on `<ReactFlow>` in `src/components/canvas/MemexCanvas.tsx`.
+  - Persist resized dimensions (`style: { width, height }`) to `localStorage` through Zustand's `onNodesChange` in `src/store/useMemexStore.ts`.
+  - Update all 8 seed cards in `src/data/demo-seed.ts` with explicit default dimensions (`style: { width: 320, height: 210 }`) for generous layout spacing.
+  - Add global CSS overrides in `src/app/globals.css` for `.react-flow__resize-control` to style handle dots as smooth circular pills (`rounded-full`) with subtle amber/violet glowing borders.
+  - Verify Property 3 (Serialization Round-Trip) in `src/core/__tests__/graph.property.test.ts` handles node dimensions without corruption.
+  - Run `npx tsc --noEmit` and `npm test` to verify all tests pass, then commit with: `feat(canvas): add interactive NodeResizer, fluid card movement, and rounded chassis`.
+  - _Requirements: 1.1, 1.2, 3.1_
