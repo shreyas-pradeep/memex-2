@@ -67,9 +67,9 @@ describe("useMemexStore", () => {
     expect(saved.nodes[0]).not.toHaveProperty("dragging");
   });
 
-  it("seeds every card with the default 320x210 size", () => {
+  it("seeds every card with the default 340x230 size", () => {
     for (const n of useMemexStore.getState().nodes) {
-      expect(n.style).toMatchObject({ width: 320, height: 210 });
+      expect(n.style).toMatchObject({ width: 340, height: 230 });
     }
   });
 
@@ -112,7 +112,7 @@ describe("useMemexStore", () => {
     const id = useMemexStore.getState().nodes[0].id;
     useMemexStore.getState().onNodesChange(
       new NodeChangeset([
-        { type: "dimensions", id, dimensions: { width: 320, height: 210 } },
+        { type: "dimensions", id, dimensions: { width: 340, height: 230 } },
       ]),
     );
     expect(data.has(STORAGE_KEY)).toBe(false);
@@ -131,7 +131,7 @@ describe("useMemexStore", () => {
     data.set(STORAGE_KEY, JSON.stringify(stripped));
     useMemexStore.getState().hydrate();
     for (const n of useMemexStore.getState().nodes) {
-      expect(n.style).toEqual({ width: 320, height: 210 });
+      expect(n.style).toEqual({ width: 340, height: 230 });
     }
   });
 
@@ -227,8 +227,8 @@ describe("useMemexStore", () => {
 });
 
 describe("useMemexStore trail playback", () => {
-  const HUMAN = "t-human-bush";
-  const GHOST = "t-ghost-machines";
+  const HUMAN = "trail-evolution";
+  const GHOST = "trail-retrieval";
 
   beforeEach(() => {
     installLocalStorage();
@@ -280,7 +280,7 @@ describe("useMemexStore trail playback", () => {
   it("does not persist or export playback state", () => {
     const data = installLocalStorage();
     useMemexStore.getState().setActiveTrail(HUMAN);
-    useMemexStore.getState().removeNodes(["n-vemap"]);
+    useMemexStore.getState().removeNodes(["MEM-2024-05"]);
     const stored = data.get(STORAGE_KEY)!;
     expect(stored).not.toContain("activeTrail");
     expect(useMemexStore.getState().exportJson()).not.toContain("isPlayingAuto");
@@ -307,31 +307,31 @@ describe("useMemexStore trail playback", () => {
   });
 
   it("forges a human trail from ordered cards", () => {
-    const id = useMemexStore.getState().forgeTrail("My Path", "", ["n-memex", "n-eniac", "n-memex"]);
+    const id = useMemexStore.getState().forgeTrail("My Path", "", ["MEM-1965-02", "MEM-2024-06", "MEM-1965-02"]);
     expect(id).not.toBeNull();
     const t = useMemexStore.getState().trails.find((x) => x.id === id)!;
     expect(t.origin).toBe("human");
-    expect(t.nodeIds).toEqual(["n-memex", "n-eniac"]);
-    expect(useMemexStore.getState().forgeTrail("Solo", "", ["n-memex"])).toBeNull();
+    expect(t.nodeIds).toEqual(["MEM-1965-02", "MEM-2024-06"]);
+    expect(useMemexStore.getState().forgeTrail("Solo", "", ["MEM-1965-02"])).toBeNull();
   });
   it("updateCard sets and clears event year/date, and export/import carries them", () => {
-    useMemexStore.getState().updateCard("n-memex", { year: 2026 });
-    expect(useMemexStore.getState().nodes.find((n) => n.id === "n-memex")!.data.year).toBe(2026);
+    useMemexStore.getState().updateCard("MEM-1965-02", { year: 2026 });
+    expect(useMemexStore.getState().nodes.find((n) => n.id === "MEM-1965-02")!.data.year).toBe(2026);
     const json = useMemexStore.getState().exportJson();
     useMemexStore.getState().resetToSeed();
     useMemexStore.getState().importJson(json);
-    expect(useMemexStore.getState().nodes.find((n) => n.id === "n-memex")!.data.year).toBe(2026);
+    expect(useMemexStore.getState().nodes.find((n) => n.id === "MEM-1965-02")!.data.year).toBe(2026);
     expect(useMemexStore.getState().exportJson()).toBe(json);
-    useMemexStore.getState().updateCard("n-memex", { year: null, date: "2024-10-12" });
-    const data = useMemexStore.getState().nodes.find((n) => n.id === "n-memex")!.data;
+    useMemexStore.getState().updateCard("MEM-1965-02", { year: null, date: "2024-10-12" });
+    const data = useMemexStore.getState().nodes.find((n) => n.id === "MEM-1965-02")!.data;
     expect("year" in data).toBe(false);
     expect(data.date).toBe("2024-10-12");
   });
 
   it("timeline choice and highlight are session-only and not exported", () => {
     useMemexStore.getState().setTimelineOpen(false);
-    useMemexStore.getState().highlightNode("n-asw");
-    expect(useMemexStore.getState().highlightedNodeId).toBe("n-asw");
+    useMemexStore.getState().highlightNode("MEM-1945-01");
+    expect(useMemexStore.getState().highlightedNodeId).toBe("MEM-1945-01");
     const json = useMemexStore.getState().exportJson();
     expect(json).not.toContain("isTimelineOpen");
     expect(json).not.toContain("highlightedNodeId");
@@ -340,7 +340,7 @@ describe("useMemexStore trail playback", () => {
 });
 
 describe("useMemexStore ghost engine", () => {
-  const BRIDGE = ghostDiscoveryId("n-engelbart", "n-memex");
+  const BRIDGE = ghostDiscoveryId("MEM-1945-01", "MEM-2026-07");
 
   beforeEach(() => {
     const data = installLocalStorage();
@@ -373,7 +373,7 @@ describe("useMemexStore ghost engine", () => {
     useMemexStore.getState().acceptGhostDiscovery(BRIDGE);
     const s = useMemexStore.getState();
     expect(s.edges).toHaveLength(before + 1);
-    expect(s.edges.some((e) => e.data?.origin === "human" && e.id.includes("n-engelbart"))).toBe(true);
+    expect(s.edges.some((e) => e.data?.origin === "human" && e.id.includes("MEM-2026-07"))).toBe(true);
     expect(s.ghostDiscoveries.some((d) => d.id === BRIDGE)).toBe(false);
     expect(s.selectedGhostDiscoveryId).toBeNull();
   });
@@ -392,9 +392,9 @@ describe("useMemexStore ghost engine", () => {
   it("deleting a card cleanses its discoveries and closes the inspector", async () => {
     await useMemexStore.getState().triggerGhostScan();
     useMemexStore.getState().selectGhostDiscovery(BRIDGE);
-    useMemexStore.getState().removeNodes(["n-engelbart"]);
+    useMemexStore.getState().removeNodes(["MEM-2026-07"]);
     const s = useMemexStore.getState();
-    expect(s.ghostDiscoveries.some((d) => d.sourceId === "n-engelbart" || d.targetId === "n-engelbart")).toBe(false);
+    expect(s.ghostDiscoveries.some((d) => d.sourceId === "MEM-2026-07" || d.targetId === "MEM-2026-07")).toBe(false);
     expect(s.selectedGhostDiscoveryId).toBeNull();
   });
 
@@ -429,8 +429,8 @@ describe("useMemexStore ghost engine", () => {
     const live = {
       source: "live",
       discoveries: [
-        { sourceId: "n-asw", targetId: "n-eniac", rationale: "Both date from 1945.", confidence: 0.91 },
-        { sourceId: "n-asw", targetId: "n-memex", rationale: "already connected", confidence: 0.9 },
+        { sourceId: "MEM-1945-01", targetId: "MEM-2024-06", rationale: "Both date from 1945.", confidence: 0.91 },
+        { sourceId: "MEM-1945-01", targetId: "MEM-1965-02", rationale: "already connected", confidence: 0.9 },
       ],
     };
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => live });
@@ -439,7 +439,7 @@ describe("useMemexStore ghost engine", () => {
     const s = useMemexStore.getState();
     expect(fetchMock).toHaveBeenCalledWith("/api/ghost", expect.objectContaining({ method: "POST" }));
     expect(s.ghostEngineMode).toBe("live");
-    expect(s.ghostDiscoveries.map((d) => d.id)).toEqual([ghostDiscoveryId("n-asw", "n-eniac")]);
+    expect(s.ghostDiscoveries.map((d) => d.id)).toEqual([ghostDiscoveryId("MEM-1945-01", "MEM-2024-06")]);
   });
 
   it("falls back to the local engine on non-ok, fallback source or failure", async () => {
@@ -464,18 +464,18 @@ describe("useMemexStore ghost engine", () => {
     const second = useMemexStore.getState().triggerGhostScan();
     expect(second).toBe(first);
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    useMemexStore.getState().removeNodes(["n-eniac"]);
+    useMemexStore.getState().removeNodes(["MEM-2024-06"]);
     release({
       ok: true,
       json: async () => ({
         source: "live",
-        discoveries: [{ sourceId: "n-asw", targetId: "n-engelbart", rationale: "x", confidence: 0.9 }],
+        discoveries: [{ sourceId: "MEM-1945-01", targetId: "MEM-2026-07", rationale: "x", confidence: 0.9 }],
       }),
     });
     await first;
     const s = useMemexStore.getState();
     expect(s.ghostEngineMode).toBe("neural");
-    expect(s.nodes.some((n) => n.id === "n-eniac")).toBe(false);
+    expect(s.nodes.some((n) => n.id === "MEM-2024-06")).toBe(false);
   });
 
   it("the debounced auto-scan never uses the live route", async () => {

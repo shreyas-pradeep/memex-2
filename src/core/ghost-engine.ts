@@ -16,7 +16,7 @@ import type {
 /**
  * Minimum raw score for a pair of cards to become a discovery. The score
  * blends keyword, concept and tag overlap (see `detectGhostSynapses`); at 0.3
- * the 8-card demo seed yields exactly three bridges between unconnected cards.
+ * the 7-card demo seed yields three bridges between unconnected cards.
  */
 export const DEFAULT_GHOST_THRESHOLD = 0.3;
 
@@ -46,7 +46,7 @@ const STOP_WORDS: ReadonlySet<string> = new Set(
     "our out over own same she should some such than that the their them then there these they this those " +
     "through too under until up very was were what when where which while who whom why will with would you " +
     "your one two three about around among upon within without whose via per yet still even ever many " +
-    "every made make makes used use uses using new first last early late"
+    "every made make makes used use uses using new first last early late source"
   ).split(" "),
 );
 
@@ -110,6 +110,27 @@ export const CONCEPT_LEXICON: Readonly<Record<string, { label: string; terms: re
     terms: [
       "memory", "memex", "microfilm", "store", "storage", "record", "archive", "book", "desk",
       "supplement", "device", "stored", "retrieval",
+    ],
+  },
+  retrieval: {
+    label: "attention and retrieval",
+    terms: [
+      "attention", "query", "key", "retrieval", "retrieve", "rag", "search", "lookup",
+      "transformer", "selection", "select", "benchmark",
+    ],
+  },
+  latent: {
+    label: "latent representations",
+    terms: [
+      "latent", "representation", "feature", "embedding", "autoencoder", "interpretability",
+      "interpretable", "superposition", "neuron", "model", "parametric", "geometry",
+    ],
+  },
+  graph: {
+    label: "graphs and spatial structure",
+    terms: [
+      "graph", "entity", "community", "cluster", "spatial", "canvas", "landmark", "layout",
+      "structure", "gestalt", "zoomable", "map",
     ],
   },
   wartime: {

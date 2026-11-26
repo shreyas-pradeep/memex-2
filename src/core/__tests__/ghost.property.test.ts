@@ -16,6 +16,7 @@ import {
   synthesizeBridgeRationale,
 } from "../ghost-engine";
 import { acceptDiscovery, removeNodes } from "../graph-engine";
+import { getChronologicalNodes, getTrailEdges } from "../trail-engine";
 import { demoSeed } from "@/data/demo-seed";
 import type {
   AssociativeEdge,
@@ -296,19 +297,29 @@ describe("keywords and the demo seed", () => {
     expect(found.length).toBeGreaterThanOrEqual(2);
     expect(found.length).toBeLessThanOrEqual(3);
     const ids = found.map((d) => d.id);
-    expect(ids).toContain(ghostDiscoveryId("n-asw", "n-engelbart"));
+    expect(ids).toContain(ghostDiscoveryId("MEM-1945-01", "MEM-2026-07"));
     for (const d of found) {
       expect(d.confidence).toBeGreaterThanOrEqual(0.78);
       expect(d.confidence).toBeLessThanOrEqual(0.96);
       expect(d.rationale).toMatch(/never linked/);
     }
-    expect(found.find((d) => d.id === ghostDiscoveryId("n-asw", "n-engelbart"))?.rationale).toMatch(
-      /23 years.*1945.*1968/,
+    expect(found.find((d) => d.id === ghostDiscoveryId("MEM-1945-01", "MEM-2026-07"))?.rationale).toMatch(
+      /81 years.*1945.*2026/,
     );
     const connected = new Set(demoSeed.edges.map((e) => ghostPairKey(e.source, e.target)));
     for (const d of found) expect(connected.has(ghostPairKey(d.sourceId, d.targetId))).toBe(false);
   });
 
+  it("the demo seed is dated, and every trail's consecutive stops are connected", () => {
+    expect(getChronologicalNodes(demoSeed.nodes)).toHaveLength(7);
+    const ids = new Set(demoSeed.nodes.map((n) => n.id));
+    expect(ids.size).toBe(7);
+    for (const n of demoSeed.nodes) expect(n.data.archivalId).toBe(n.id);
+    for (const t of demoSeed.trails) {
+      expect(t.nodeIds.every((id) => ids.has(id))).toBe(true);
+      expect(getTrailEdges(t, demoSeed.edges)).toHaveLength(t.nodeIds.length - 1);
+    }
+  });
   it("forgeGhostTrail makes a two-stop ghost trail", () => {
     const [d] = detectGhostSynapses(demoSeed.nodes, demoSeed.edges);
     const trail = forgeGhostTrail(d, demoSeed.nodes);

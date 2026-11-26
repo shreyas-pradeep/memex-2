@@ -19,6 +19,7 @@ import {
 import type {
   AssociativeEdge,
   AssociativeEdgeData,
+  MemexCardType,
   GhostDiscovery,
   LinkOrigin,
   MemexGraphState,
@@ -42,7 +43,11 @@ import {
 import { GEMINI_KEY_HEADER, loadUserGeminiKey } from "./ai-settings";
 import { demoSeed } from "@/data/demo-seed";
 
-export const STORAGE_KEY = "memex-2:graph:v1";
+/**
+ * Saves live under this key. Graphs saved under the earlier key
+ * (`memex-2:graph:v1`, the 1945 seed) are left untouched and no longer loaded.
+ */
+export const STORAGE_KEY = "memex-research-workspace-v1";
 /** Dismissed ghost discovery IDs: a sorted JSON array, kept apart from the graph schema. */
 export const GHOST_DISMISSED_KEY = "memex-2:ghost-dismissed:v1";
 /** Quiet period after the last card creation before the proactive scan runs. */
@@ -55,7 +60,7 @@ export const GHOST_LIVE_TIMEOUT_MS = 30_000;
 /** Which engine produced the last scan. Session-only. */
 export type GhostEngineMode = "live" | "neural";
 
-/** Fresh deep copy of the 1945 demo seed (never hands out the shared module object). */
+/** Fresh deep copy of the demo seed (1945-2026 cognitive AI research) (never hands out the shared module object). */
 function freshSeed(): MemexGraphState {
   return deserializeGraph(serializeGraph(demoSeed));
 }
@@ -133,7 +138,7 @@ export function persistGraph(state: MemexGraphState): void {
   }
 }
 
-export const DEFAULT_CARD_SIZE = { width: 320, height: 210 } as const;
+export const DEFAULT_CARD_SIZE = { width: 340, height: 230 } as const;
 
 /**
  * Gives cards saved before resizing existed (no `style` size, no `width` /
@@ -385,7 +390,7 @@ export interface MemexStore extends MemexGraphState {
   /** Creates a human trail from ordered card IDs and returns its ID (null when fewer than 2 valid cards). */
   forgeTrail: (title: string, description: string, nodeIds: string[]) => string | null;
 
-  /** Replaces the whole graph with the 1945 demo seed and persists it. */
+  /** Replaces the whole graph with the demo seed and persists it. */
   resetToSeed: () => void;
   exportJson: () => string;
   /** Replaces the graph from JSON; throws (state untouched) when the JSON is invalid. */
@@ -735,3 +740,45 @@ export const useMemexStore = create<MemexStore>()((set, get) => {
     },
   };
 });
+
+// ---------------------------------------------------------------------------
+// Compatibility aliases. Read-only conveniences over the existing store shape;
+// they change no behaviour and are not used to style the UI.
+// ---------------------------------------------------------------------------
+
+export type { AssociativeEdge, MemexCardType, MemexNode };
+
+/** Reference accent per card type (a naming alias; components keep their own styles). */
+export const TYPE_COLORS = {
+  note: "#FFB236",
+  quote: "#60A5FA",
+  artifact: "#34D399",
+  ghost: "#B388FF",
+} as const satisfies Record<MemexCardType, string>;
+
+/**
+ * Describes how the Ghost Engine is configured today. Descriptive only: the
+ * store does not hold it. `engine` is `ghostEngineMode` (what produced the last
+ * scan), `threshold` is `DEFAULT_GHOST_THRESHOLD`, and `hasUserKey` reflects
+ * whether a Gemini key is saved (`ai-settings.ts`, sent only to `/api/ghost`).
+ */
+export interface GhostSettings {
+  engine: GhostEngineMode;
+  threshold: number;
+  hasUserKey: boolean;
+}
+
+const EMPTY_NODES: MemexNode[] = [];
+const EMPTY_EDGES: AssociativeEdge[] = [];
+const EMPTY_DISCOVERIES: GhostDiscovery[] = [];
+
+export const selectCards = (s: MemexStore): MemexNode[] => s.nodes ?? EMPTY_NODES;
+export const selectEdges = (s: MemexStore): AssociativeEdge[] => s.edges ?? EMPTY_EDGES;
+export const selectDiscoveries = (s: MemexStore): GhostDiscovery[] =>
+  s.ghostDiscoveries ?? EMPTY_DISCOVERIES;
+export const selectActiveTrailId = (s: MemexStore): string | null => s.activeTrailId;
+export const selectActiveStepIndex = (s: MemexStore): number => s.activeTrailIndex;
+export const selectIsPlayingTrail = (s: MemexStore): boolean => s.isPlayingAuto;
+export const selectOnNodesChange = (s: MemexStore): MemexStore["onNodesChange"] => s.onNodesChange;
+export const selectOnEdgesChange = (s: MemexStore): MemexStore["onEdgesChange"] => s.onEdgesChange;
+export const selectOnConnect = (s: MemexStore): MemexStore["onConnect"] => s.onConnect;

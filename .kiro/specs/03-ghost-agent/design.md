@@ -18,7 +18,7 @@ Pure discovery logic lives in `src/core/ghost-engine.ts` (no React, no clock, no
 3. `computeCosineSimilarity(a, b)` over sparse maps; returns 0 when either norm is 0, and is clamped to `[0, 1]`.
 4. Tag overlap is the Jaccard index of normalized tags.
 5. Concept overlap: `CONCEPT_LEXICON` groups related terms (e.g. hypertext/association/link/trail/memex; analog/differential/analyzer/mechanical/computing/eniac; mit/engelbart/demo/mouse/augment). Terms are stemmed at load and each card maps to a set of concept ids; overlap is the Ochiai coefficient. The stemmer folds plurals and strips one `-ing`/`-ed`/`-ly`.
-6. `score = clamp01(0.3 * sqrt(cosine) + 0.5 * concept + 0.2 * jaccard)`. A pair becomes a discovery when `score >= threshold` (default `0.3` on this rescaled score; the 8-card demo seed then yields exactly three bridges). Results are sorted by score and capped at `maxResults` (default 3).
+6. `score = clamp01(0.3 * sqrt(cosine) + 0.5 * concept + 0.2 * jaccard)`. A pair becomes a discovery when `score >= threshold` (default `0.3` on this rescaled score; the 7-card demo seed then yields exactly three bridges). Results are sorted by score and capped at `maxResults` (default 3).
 7. Confidence is calibrated, not the raw score: `0.78 + 0.18 * clamp01(score / 0.6)`, rounded to 3 decimals. It is monotone in the score and always within `[0.78, 0.96]`.
 8. Output is sorted by score descending, then by id ascending. The ID is `gd-<len>:<minId>:<maxId>` (the length prefix keeps it collision-free for arbitrary IDs); source is the lexicographically smaller card ID.
 
@@ -44,8 +44,7 @@ File: `src/core/__tests__/ghost.property.test.ts`.
 `isGhostScanning` and `selectedGhostDiscoveryId` are never passed to `persistGraph` or `exportJson`. `commit` clears the selection when the selected discovery disappears.
 
 ## 4. Demo seed
-`seedGhostDiscoveries` is empty (the seed's existing ghost edges already cover its connected pairs). Card `n-engelbart` gains the tags `memex` and `bush`, so a scan finds "The Memex Desk" <-> "Engelbart's Mother of All Demos" and "As We May Think" <-> "Engelbart's Mother of All Demos" at the default threshold.
-
+`seedGhostDiscoveries` is empty. The seed is the 1945-2026 cognitive AI research dataset (7 cards, `MEM-1945-01` to `MEM-2026-07`). Consecutive stops of both seed trails are connected, and a scan at the default threshold finds three bridges between unconnected cards: Bush <-> Spatial Gestalt hypothesis, Bush <-> GraphRAG, and Engelbart <-> Spatial Gestalt hypothesis.
 ## 5. Live generative route (`/api/ghost`)
 - `GET /api/ghost` returns `{ live: boolean }`: whether the server has `GEMINI_API_KEY`. It never returns the key. `await connection()` keeps it a per-request read under Cache Components.
 - `POST /api/ghost` takes `{ nodes, existingEdges }` and an optional `x-gemini-api-key` header (the user's key, saved in localStorage as `memex-2:gemini-key:v1`). Input is validated by `validateGhostRequest` in `src/core/ghost-live.ts` (max 60 nodes, 400 edges, bounded string lengths, 400 on violation). The key used is the user's, else `process.env.GEMINI_API_KEY`.
