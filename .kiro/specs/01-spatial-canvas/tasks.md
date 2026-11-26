@@ -39,3 +39,12 @@
   - Verify Property 3 (Serialization Round-Trip) in `src/core/__tests__/graph.property.test.ts` handles node dimensions without corruption.
   - Run `npx tsc --noEmit` and `npm test` to verify all tests pass, then commit with: `feat(canvas): add interactive NodeResizer, fluid card movement, and rounded chassis`.
   - _Requirements: 1.1, 1.2, 3.1_
+
+- [x] 7. Elevate archival card materiality, fix drag-lock, and polish HUD console
+  - Redesign `src/components/canvas/ArchivalCardNode.tsx` with a two-tone chassis: top header bar styled as a darker microfiche strip (`bg-[#161922] border-b border-white/5 px-4 py-2.5 rounded-t-2xl`) containing the drag handle, archival ID (`font-mono text-xs text-[#8E94A5]`), type badge, and hover delete button (✕). Body is `#11131C` with `p-5` and natural content wrapping with `minHeight: 160px` to avoid empty voids.
+  - Typology treatments: Quote cards get an italicized serif body with a subtle amber watermark quotation mark (“); Artifact cards replace the stock glyph with a 1945 technical blueprint container with microfiche gridlines and patent coordinates; Ghost cards get a Phantom Violet (`#B388FF`) rim glow and a subtle phosphor status badge.
+  - Handle decluttering: style React Flow `<Handle />` components as sleek, border-integrated pills that expand and glow on card hover.
+  - Drag & gesture fix: header has `cursor-grab active:cursor-grabbing`; NO static `<div>` has `nodrag` or `nowheel` (only edit `<input>` and `<textarea>` elements get them).
+  - In `src/components/canvas/MemexCanvas.tsx`, style the top-left HUD as a tactile instrument console: `rounded-2xl` glassmorphism chassis, tactile "+ ADD NOTE" and "RESET SEED" buttons, and amber glow on stats (e.g. 008 NODES // 009 EDGES). Add `proOptions={{ hideAttribution: true }}` to `<ReactFlow>`.
+  - Run `npx tsc --noEmit` and `npm test` to verify all tests pass, then commit with: `refactor(ui): elevate archival materiality, fix drag-lock, and polish 1945 typologies`.
+  - _Requirements: 1.1, 1.2, 1.3_
