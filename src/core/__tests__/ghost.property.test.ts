@@ -1,7 +1,12 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import {
+  GHOST_CONFIDENCE_MAX,
+  GHOST_CONFIDENCE_MIN,
   buildGhostEdges,
+  calibrateGhostConfidence,
+  ghostDiscoveryId,
+  sanitizeGhostSuggestions,
   computeCosineSimilarity,
   detectGhostSynapses,
   extractKeywords,
@@ -101,7 +106,9 @@ describe("Property 1: Bounded Confidence", () => {
           expect(Number.isFinite(d.confidence)).toBe(true);
           expect(d.confidence).toBeGreaterThanOrEqual(0);
           expect(d.confidence).toBeLessThanOrEqual(1);
-          expect(d.confidence).toBeGreaterThanOrEqual(Math.min(threshold, 1) - 0.0005);
+          // Local confidence is calibrated into [0.78, 0.96] from the raw score.
+          expect(d.confidence).toBeGreaterThanOrEqual(GHOST_CONFIDENCE_MIN);
+          expect(d.confidence).toBeLessThanOrEqual(GHOST_CONFIDENCE_MAX);
         }
       }),
       RUNS,
@@ -284,9 +291,20 @@ describe("keywords and the demo seed", () => {
     );
   });
 
-  it("the demo seed yields at least one non-obvious bridge between unconnected cards", () => {
+  it("the demo seed yields 2 to 3 non-obvious bridges between unconnected cards", () => {
     const found = detectGhostSynapses(demoSeed.nodes, demoSeed.edges);
-    expect(found.length).toBeGreaterThanOrEqual(1);
+    expect(found.length).toBeGreaterThanOrEqual(2);
+    expect(found.length).toBeLessThanOrEqual(3);
+    const ids = found.map((d) => d.id);
+    expect(ids).toContain(ghostDiscoveryId("n-asw", "n-engelbart"));
+    for (const d of found) {
+      expect(d.confidence).toBeGreaterThanOrEqual(0.78);
+      expect(d.confidence).toBeLessThanOrEqual(0.96);
+      expect(d.rationale).toMatch(/never linked/);
+    }
+    expect(found.find((d) => d.id === ghostDiscoveryId("n-asw", "n-engelbart"))?.rationale).toMatch(
+      /23 years.*1945.*1968/,
+    );
     const connected = new Set(demoSeed.edges.map((e) => ghostPairKey(e.source, e.target)));
     for (const d of found) expect(connected.has(ghostPairKey(d.sourceId, d.targetId))).toBe(false);
   });
@@ -296,5 +314,113 @@ describe("keywords and the demo seed", () => {
     const trail = forgeGhostTrail(d, demoSeed.nodes);
     expect(trail.origin).toBe("ghost");
     expect(trail.nodeIds).toEqual([d.sourceId, d.targetId]);
+  });
+});
+
+// ---------- Calibration, caps, determinism, live sanitizer ----------
+
+describe("calibration, cap and determinism", () => {
+  it("calibrateGhostConfidence is monotone and stays within [0.78, 0.96]", () => {
+    fc.assert(
+      fc.property(fc.double({ min: -1, max: 2, noNaN: true }), fc.double({ min: -1, max: 2, noNaN: true }), (x, y) => {
+        const [lo, hi] = x <= y ? [x, y] : [y, x];
+        const a = calibrateGhostConfidence(lo);
+        const b = calibrateGhostConfidence(hi);
+        expect(a).toBeLessThanOrEqual(b);
+        for (const c of [a, b]) {
+          expect(c).toBeGreaterThanOrEqual(GHOST_CONFIDENCE_MIN);
+          expect(c).toBeLessThanOrEqual(GHOST_CONFIDENCE_MAX);
+        }
+      }),
+      RUNS,
+    );
+  });
+
+  it("local results are deterministic, capped and sorted by confidence", () => {
+    fc.assert(
+      fc.property(sceneArb, fc.integer({ min: 0, max: 5 }), ({ nodes, edges, threshold }, cap) => {
+        const a = detectGhostSynapses(nodes, edges, threshold, { maxResults: cap });
+        expect(detectGhostSynapses(nodes, edges, threshold, { maxResults: cap })).toEqual(a);
+        expect(a.length).toBeLessThanOrEqual(cap);
+        for (let i = 1; i < a.length; i++) expect(a[i - 1].confidence).toBeGreaterThanOrEqual(a[i].confidence);
+        expect(detectGhostSynapses(nodes, edges, threshold).length).toBeLessThanOrEqual(3);
+      }),
+      RUNS,
+    );
+  });
+
+  it("different words for one idea still bridge through the concept lexicon", () => {
+    const mk = (id: string, title: string, content: string): MemexNode => ({
+      id,
+      type: "memexCard",
+      position: { x: 0, y: 0 },
+      data: { archivalId: id, title, content, tags: [], cardType: "note", createdAt: "1945-07-01T00:00:00.000Z" },
+    });
+    const out = detectGhostSynapses(
+      [mk("a", "Hyperlinks", "Linked trails of association."), mk("b", "Memex", "A desk with microfilm.")],
+      [],
+      0.1,
+    );
+    expect(out).toHaveLength(1);
+    expect(out[0].rationale).toMatch(/associative linking/);
+  });
+});
+
+describe("sanitizeGhostSuggestions", () => {
+  const nodes = [{ id: "a" }, { id: "b" }, { id: "c" }, { id: "d" }];
+  const edges = [{ source: "a", target: "b" }];
+  const rawArb = fc.array(
+    fc.record({
+      sourceId: fc.oneof(fc.constantFrom("a", "b", "c", "d", "zz"), fc.anything()),
+      targetId: fc.oneof(fc.constantFrom("a", "b", "c", "d", "zz"), fc.anything()),
+      rationale: fc.oneof(fc.string({ maxLength: 800 }), fc.anything()),
+      confidence: fc.oneof(fc.double(), fc.anything()),
+      bridgeTheme: fc.oneof(fc.string(), fc.anything()),
+    }),
+    { maxLength: 12 },
+  );
+
+  it("always returns valid, unique, unconnected, bounded discoveries", () => {
+    fc.assert(
+      fc.property(rawArb, (raw) => {
+        const out = sanitizeGhostSuggestions(raw, nodes, edges);
+        const seen = new Set<string>();
+        expect(out.length).toBeLessThanOrEqual(4);
+        for (const d of out) {
+          expect(d.sourceId).not.toBe(d.targetId);
+          expect(["a", "b", "c", "d"]).toContain(d.sourceId);
+          expect(["a", "b", "c", "d"]).toContain(d.targetId);
+          expect(ghostPairKey(d.sourceId, d.targetId)).not.toBe(ghostPairKey("a", "b"));
+          expect(seen.has(d.id)).toBe(false);
+          seen.add(d.id);
+          expect(d.sourceId <= d.targetId).toBe(true);
+          expect(d.confidence).toBeGreaterThanOrEqual(0);
+          expect(d.confidence).toBeLessThanOrEqual(1);
+          expect(d.rationale.length).toBeGreaterThan(0);
+          expect(d.rationale.length).toBeLessThanOrEqual(400);
+        }
+      }),
+      RUNS,
+    );
+  });
+
+  it("dedups symmetric pairs, clamps confidence and honors dismissals", () => {
+    const raw = [
+      { sourceId: "d", targetId: "c", rationale: "  x  ", confidence: 7, bridgeTheme: "Theme" },
+      { sourceId: "c", targetId: "d", rationale: "dup", confidence: 0.1 },
+      { sourceId: "a", targetId: "b", rationale: "connected", confidence: 0.9 },
+      { sourceId: "a", targetId: "a", rationale: "self", confidence: 0.9 },
+      { sourceId: "a", targetId: "nope", rationale: "ghost id", confidence: 0.9 },
+      { sourceId: "a", targetId: "c", rationale: "ok", confidence: -3 },
+    ];
+    const out = sanitizeGhostSuggestions(raw, nodes, edges);
+    expect(out.map((d) => [d.id, d.confidence])).toEqual([
+      [ghostDiscoveryId("c", "d"), 1],
+      [ghostDiscoveryId("a", "c"), 0],
+    ]);
+    expect(out[0].rationale).toBe("Theme: x");
+    const skipped = sanitizeGhostSuggestions(raw, nodes, edges, { dismissed: [ghostDiscoveryId("c", "d")] });
+    expect(skipped.map((d) => d.id)).toEqual([ghostDiscoveryId("a", "c")]);
+    expect(sanitizeGhostSuggestions("nope", nodes, edges)).toEqual([]);
   });
 });

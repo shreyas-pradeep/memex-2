@@ -36,7 +36,10 @@ import {
   DEFAULT_GHOST_THRESHOLD,
   detectGhostSynapses,
   forgeGhostTrail,
+  ghostPairKey,
+  sanitizeGhostSuggestions,
 } from "@/core/ghost-engine";
+import { GEMINI_KEY_HEADER, loadUserGeminiKey } from "./ai-settings";
 import { demoSeed } from "@/data/demo-seed";
 
 export const STORAGE_KEY = "memex-2:graph:v1";
@@ -46,6 +49,11 @@ export const GHOST_DISMISSED_KEY = "memex-2:ghost-dismissed:v1";
 export const GHOST_AUTOSCAN_MS = 1200;
 /** Minimum time the scanning state stays visible, so the radar state is readable. */
 export const GHOST_SCAN_MIN_MS = 600;
+/** Client-side ceiling for the live route (the server allows two 12s upstream tries). */
+export const GHOST_LIVE_TIMEOUT_MS = 30_000;
+
+/** Which engine produced the last scan. Session-only. */
+export type GhostEngineMode = "live" | "neural";
 
 /** Fresh deep copy of the 1945 demo seed (never hands out the shared module object). */
 function freshSeed(): MemexGraphState {
@@ -194,6 +202,7 @@ function clearDismissedGhostIds(): void {
 
 let autoScanTimer: ReturnType<typeof setTimeout> | undefined;
 let scanHoldTimer: ReturnType<typeof setTimeout> | undefined;
+let scanInFlight: Promise<void> | null = null;
 
 /** Cancels a pending proactive scan (used on reset/import and by tests). */
 export function cancelGhostAutoScan(): void {
@@ -249,15 +258,71 @@ const IDLE_PLAYBACK = {
 } as const;
 
 /** Ghost UI state. Session-only: never persisted or exported. */
-const IDLE_GHOST = { isGhostScanning: false, selectedGhostDiscoveryId: null } as const;
+const IDLE_GHOST = {
+  isGhostScanning: false,
+  selectedGhostDiscoveryId: null,
+  ghostEngineMode: "neural" as GhostEngineMode,
+};
+
+/** Identity of the graph as the scan sees it: card ids plus connected pairs (ignores drags). */
+function graphSignature(nodes: readonly MemexNode[], edges: readonly AssociativeEdge[]): string {
+  const ids = nodes.map((n) => n.id).sort().join("|");
+  const pairs = edges.map((e) => ghostPairKey(e.source, e.target)).sort().join("|");
+  return `${ids}#${pairs}`;
+}
+
+/**
+ * Asks `/api/ghost` for live discoveries. Resolves `null` on any failure,
+ * non-ok status, timeout or `source !== "live"`, so the caller can fall back
+ * to the local engine. Sends the user's saved key (if any) in a header only.
+ */
+async function fetchLiveSuggestions(
+  nodes: readonly MemexNode[],
+  edges: readonly AssociativeEdge[],
+): Promise<unknown[] | null> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), GHOST_LIVE_TIMEOUT_MS);
+  try {
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    const userKey = loadUserGeminiKey();
+    if (userKey !== "") headers[GEMINI_KEY_HEADER] = userKey;
+    const res = await fetch("/api/ghost", {
+      method: "POST",
+      headers,
+      signal: controller.signal,
+      body: JSON.stringify({
+        nodes: nodes.map((n) => ({ id: n.id, data: n.data })),
+        existingEdges: edges.map((e) => ({ source: e.source, target: e.target })),
+      }),
+    });
+    if (!res.ok) return null;
+    const body: unknown = await res.json();
+    if (typeof body !== "object" || body === null) return null;
+    const { source, discoveries } = body as { source?: unknown; discoveries?: unknown };
+    return source === "live" && Array.isArray(discoveries) ? (discoveries as unknown[]) : null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 
 export interface MemexStore extends MemexGraphState {
   /** Session-only: true while the Ghost Engine scan indicator is showing. */
   isGhostScanning: boolean;
   /** Session-only: discovery open in the Synapse Inspector Drawer. */
   selectedGhostDiscoveryId: string | null;
-  /** Scans the canvas for unconnected, non-dismissed bridges and stores them. */
-  triggerGhostScan: () => void;
+  /** Session-only: engine that produced the last scan ("live" Gemini or local "neural"). */
+  ghostEngineMode: GhostEngineMode;
+  /**
+   * Scans the canvas for unconnected, non-dismissed bridges and stores them.
+   * Tries the live `/api/ghost` route first and falls back to the local engine
+   * on any failure; `{ live: false }` (used by the debounced auto-scan so it
+   * never spends API quota) goes straight to the local engine. Concurrent
+   * calls share one in-flight scan.
+   */
+  triggerGhostScan: (options?: { live?: boolean }) => Promise<void>;
   selectGhostDiscovery: (id: string | null) => void;
   /** Turns a ghost synapse into a human edge and removes the discovery. */
   acceptGhostDiscovery: (id: string) => void;
@@ -449,7 +514,8 @@ export const useMemexStore = create<MemexStore>()((set, get) => {
       cancelGhostAutoScan();
       autoScanTimer = setTimeout(() => {
         autoScanTimer = undefined;
-        get().triggerGhostScan();
+        // Auto-scans stay local so card creation never spends API quota.
+        void get().triggerGhostScan({ live: false });
       }, GHOST_AUTOSCAN_MS);
     },
     removeNodes: (ids) => commit(removeNodesPure(pick(get()), ids)),
@@ -497,25 +563,66 @@ export const useMemexStore = create<MemexStore>()((set, get) => {
       commit({ ...pick(get()), ghostDiscoveries }),
     autoLayout: () => commit(computeAutoLayout(pick(get()))),
 
-    triggerGhostScan: () => {
-      const state = get();
-      set({ isGhostScanning: true });
-      const previous = new Map(state.ghostDiscoveries.map((d) => [d.id, d]));
-      const found = detectGhostSynapses(state.nodes, state.edges, DEFAULT_GHOST_THRESHOLD, {
-        dismissed: loadDismissedGhostIds(),
-        discoveredAt: new Date().toISOString(),
-      }).map((d) => {
-        const old = previous.get(d.id);
-        return old ? { ...d, discoveredAt: old.discoveredAt, ...(old.trailId ? { trailId: old.trailId } : {}) } : d;
+    triggerGhostScan: (options) => {
+      if (scanInFlight) return scanInFlight;
+      const run = async (): Promise<void> => {
+        const startedAt = Date.now();
+        const start = get();
+        set({ isGhostScanning: true });
+        try {
+          let mode: GhostEngineMode = "neural";
+          let live: GhostDiscovery[] | null = null;
+          if (options?.live !== false) {
+            const signature = graphSignature(start.nodes, start.edges);
+            const suggestions = await fetchLiveSuggestions(start.nodes, start.edges);
+            const now = get();
+            // Drop live results when the graph changed while the request was in flight.
+            if (suggestions !== null && graphSignature(now.nodes, now.edges) === signature) {
+              const clean = sanitizeGhostSuggestions(suggestions, now.nodes, now.edges, {
+                dismissed: loadDismissedGhostIds(),
+                discoveredAt: new Date().toISOString(),
+              });
+              if (clean.length > 0) live = clean;
+            }
+          }
+          const state = get();
+          const previous = new Map(state.ghostDiscoveries.map((d) => [d.id, d]));
+          let found: GhostDiscovery[];
+          if (live !== null) {
+            mode = "live";
+            found = live;
+          } else {
+            found = detectGhostSynapses(state.nodes, state.edges, DEFAULT_GHOST_THRESHOLD, {
+              dismissed: loadDismissedGhostIds(),
+              discoveredAt: new Date().toISOString(),
+            });
+          }
+          found = found.map((d) => {
+            const old = previous.get(d.id);
+            return old
+              ? { ...d, discoveredAt: old.discoveredAt, ...(old.trailId ? { trailId: old.trailId } : {}) }
+              : d;
+          });
+          if (!sameDiscoveries(found, state.ghostDiscoveries)) {
+            commit({ ...pick(state), ghostDiscoveries: found });
+          }
+          set({ ghostEngineMode: mode });
+        } finally {
+          const hold = Math.max(0, GHOST_SCAN_MIN_MS - (Date.now() - startedAt));
+          if (scanHoldTimer !== undefined) clearTimeout(scanHoldTimer);
+          if (hold === 0) set({ isGhostScanning: false });
+          else {
+            scanHoldTimer = setTimeout(() => {
+              scanHoldTimer = undefined;
+              set({ isGhostScanning: false });
+            }, hold);
+          }
+        }
+      };
+      scanInFlight = run().finally(() => {
+        scanInFlight = null;
       });
-      if (!sameDiscoveries(found, state.ghostDiscoveries)) {
-        commit({ ...pick(state), ghostDiscoveries: found });
-      }
-      if (scanHoldTimer !== undefined) clearTimeout(scanHoldTimer);
-      scanHoldTimer = setTimeout(() => {
-        scanHoldTimer = undefined;
-        set({ isGhostScanning: false });
-      }, GHOST_SCAN_MIN_MS);
+      return scanInFlight;
     },
 
     selectGhostDiscovery: (id) => {

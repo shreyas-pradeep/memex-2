@@ -16,3 +16,9 @@
   - Add the "⚡ WAKE GHOST ENGINE" HUD button and mount the drawer in `src/components/canvas/MemexCanvas.tsx`; make the demo seed yield a discoverable bridge.
   - Verify with `npx tsc --noEmit`, `npm test` and `npx eslint src`, then commit: `feat(spec-03): implement autonomous ghost AI connection engine and synapse inspector`.
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.1, 3.5, 3.7, 4.1_
+- [x] 4. Add live generative route, fuzzy local engine and AI settings
+  - Add `src/app/api/ghost/route.ts` (GET `{ live }`, POST with validation, Gemini call via `x-goog-api-key`, 12s timeout, `{ source: "none" }` fallback) and pure helpers in `src/core/ghost-live.ts`.
+  - Overhaul `detectGhostSynapses` with `CONCEPT_LEXICON`, stemming, calibrated confidence `[0.78, 0.96]`, default threshold `0.3` and a top-3 cap; add `sanitizeGhostSuggestions`.
+  - Make `triggerGhostScan` async (live first, local fallback, stale and concurrency guards, `ghostEngineMode`); add the AI pill, gear button and `AISettingsModal`; add `.env.example`.
+  - Extend `ghost.property.test.ts` and the store tests (fetch mocked); verify with `npx tsc --noEmit`, `npm test`, `npx eslint src` and `npx next build`, then commit: `feat(ghost): implement live generative AI API route and fix local semantic discovery`.
+  - _Requirements: 1.5, 1.6, 4.2, 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 5.7_

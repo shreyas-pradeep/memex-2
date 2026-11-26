@@ -328,16 +328,19 @@ describe("useMemexStore ghost engine", () => {
 
   beforeEach(() => {
     const data = installLocalStorage();
+    // No network in tests: the live route "fails" so the local engine runs.
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("offline")));
     useMemexStore.getState().resetToSeed();
     data.clear();
   });
   afterEach(() => {
     vi.useRealTimers();
+    vi.unstubAllGlobals();
     cancelGhostAutoScan();
   });
 
-  it("scans the seed, finds bridges, and keeps scanning state out of the export", () => {
-    useMemexStore.getState().triggerGhostScan();
+  it("scans the seed, finds bridges, and keeps scanning state out of the export", async () => {
+    await useMemexStore.getState().triggerGhostScan();
     const s = useMemexStore.getState();
     expect(s.isGhostScanning).toBe(true);
     expect(s.ghostDiscoveries.length).toBeGreaterThanOrEqual(1);
@@ -346,8 +349,8 @@ describe("useMemexStore ghost engine", () => {
     expect(Object.keys(exported).sort()).toEqual(["edges", "ghostDiscoveries", "nodes", "trails"]);
   });
 
-  it("accept turns the synapse into a human edge and removes the discovery", () => {
-    useMemexStore.getState().triggerGhostScan();
+  it("accept turns the synapse into a human edge and removes the discovery", async () => {
+    await useMemexStore.getState().triggerGhostScan();
     const before = useMemexStore.getState().edges.length;
     useMemexStore.getState().selectGhostDiscovery(BRIDGE);
     expect(useMemexStore.getState().selectedGhostDiscoveryId).toBe(BRIDGE);
@@ -359,19 +362,19 @@ describe("useMemexStore ghost engine", () => {
     expect(s.selectedGhostDiscoveryId).toBeNull();
   });
 
-  it("dismissed discoveries do not return on later scans and survive a reload", () => {
-    useMemexStore.getState().triggerGhostScan();
+  it("dismissed discoveries do not return on later scans and survive a reload", async () => {
+    await useMemexStore.getState().triggerGhostScan();
     useMemexStore.getState().dismissGhostDiscovery(BRIDGE);
-    useMemexStore.getState().triggerGhostScan();
+    await useMemexStore.getState().triggerGhostScan();
     expect(useMemexStore.getState().ghostDiscoveries.some((d) => d.id === BRIDGE)).toBe(false);
     expect(loadDismissedGhostIds()).toEqual([BRIDGE]);
     useMemexStore.getState().hydrate();
-    useMemexStore.getState().triggerGhostScan();
+    await useMemexStore.getState().triggerGhostScan();
     expect(useMemexStore.getState().ghostDiscoveries.some((d) => d.id === BRIDGE)).toBe(false);
   });
 
-  it("deleting a card cleanses its discoveries and closes the inspector", () => {
-    useMemexStore.getState().triggerGhostScan();
+  it("deleting a card cleanses its discoveries and closes the inspector", async () => {
+    await useMemexStore.getState().triggerGhostScan();
     useMemexStore.getState().selectGhostDiscovery(BRIDGE);
     useMemexStore.getState().removeNodes(["n-engelbart"]);
     const s = useMemexStore.getState();
@@ -379,8 +382,8 @@ describe("useMemexStore ghost engine", () => {
     expect(s.selectedGhostDiscoveryId).toBeNull();
   });
 
-  it("Walk Ghost Trail forges a ghost trail and starts playback", () => {
-    useMemexStore.getState().triggerGhostScan();
+  it("Walk Ghost Trail forges a ghost trail and starts playback", async () => {
+    await useMemexStore.getState().triggerGhostScan();
     const id = useMemexStore.getState().convertDiscoveryToTrail(BRIDGE);
     const s = useMemexStore.getState();
     expect(id).not.toBeNull();
@@ -392,6 +395,7 @@ describe("useMemexStore ghost engine", () => {
   it("a burst of new cards causes one debounced scan", () => {
     vi.useFakeTimers();
     const scan = vi.fn();
+    const realScan = useMemexStore.getState().triggerGhostScan;
     useMemexStore.setState({ triggerGhostScan: scan });
     const seed = useMemexStore.getState().nodes[0];
     for (let i = 0; i < 4; i++) {
@@ -401,5 +405,67 @@ describe("useMemexStore ghost engine", () => {
     expect(scan).not.toHaveBeenCalled();
     vi.advanceTimersByTime(GHOST_AUTOSCAN_MS);
     expect(scan).toHaveBeenCalledTimes(1);
+    expect(scan).toHaveBeenCalledWith({ live: false });
+    useMemexStore.setState({ triggerGhostScan: realScan });
+  });
+
+  it("uses live discoveries when the route returns them, and reports the live engine", async () => {
+    const live = {
+      source: "live",
+      discoveries: [
+        { sourceId: "n-asw", targetId: "n-eniac", rationale: "Both date from 1945.", confidence: 0.91 },
+        { sourceId: "n-asw", targetId: "n-memex", rationale: "already connected", confidence: 0.9 },
+      ],
+    };
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => live });
+    vi.stubGlobal("fetch", fetchMock);
+    await useMemexStore.getState().triggerGhostScan();
+    const s = useMemexStore.getState();
+    expect(fetchMock).toHaveBeenCalledWith("/api/ghost", expect.objectContaining({ method: "POST" }));
+    expect(s.ghostEngineMode).toBe("live");
+    expect(s.ghostDiscoveries.map((d) => d.id)).toEqual([ghostDiscoveryId("n-asw", "n-eniac")]);
+  });
+
+  it("falls back to the local engine on non-ok, fallback source or failure", async () => {
+    for (const reply of [
+      { ok: false, json: async () => ({}) },
+      { ok: true, json: async () => ({ source: "none" }) },
+    ]) {
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(reply));
+      await useMemexStore.getState().triggerGhostScan();
+      const s = useMemexStore.getState();
+      expect(s.ghostEngineMode).toBe("neural");
+      expect(s.ghostDiscoveries.length).toBeGreaterThanOrEqual(2);
+    }
+  });
+
+  it("drops live results when the graph changed mid-flight, and shares one in-flight scan", async () => {
+    let release: (v: unknown) => void = () => undefined;
+    const pending = new Promise((r) => (release = r));
+    const fetchMock = vi.fn().mockReturnValue(pending);
+    vi.stubGlobal("fetch", fetchMock);
+    const first = useMemexStore.getState().triggerGhostScan();
+    const second = useMemexStore.getState().triggerGhostScan();
+    expect(second).toBe(first);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    useMemexStore.getState().removeNodes(["n-eniac"]);
+    release({
+      ok: true,
+      json: async () => ({
+        source: "live",
+        discoveries: [{ sourceId: "n-asw", targetId: "n-engelbart", rationale: "x", confidence: 0.9 }],
+      }),
+    });
+    await first;
+    const s = useMemexStore.getState();
+    expect(s.ghostEngineMode).toBe("neural");
+    expect(s.nodes.some((n) => n.id === "n-eniac")).toBe(false);
+  });
+
+  it("the debounced auto-scan never uses the live route", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    await useMemexStore.getState().triggerGhostScan({ live: false });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

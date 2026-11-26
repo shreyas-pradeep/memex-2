@@ -19,10 +19,13 @@ import { nextArchivalId } from "@/core/graph-engine";
 import { EDGE_COLORS, type AssociativeEdge, type MemexNode } from "@/core/types";
 import {
   selectGhostCount,
+  selectGhostEngineMode,
   selectIsGhostScanning,
   selectTriggerGhostScan,
 } from "@/store/ghost-selectors";
 import { useMemexStore, type MemexStore } from "@/store/useMemexStore";
+import { loadUserGeminiKey } from "@/store/ai-settings";
+import { AISettingsModal } from "../ghost/AISettingsModal";
 import { SynapseInspectorDrawer } from "../ghost/SynapseInspectorDrawer";
 import { ArchivalTimeline } from "../trails/ArchivalTimeline";
 import { TrailCameraDirector } from "../trails/TrailCameraDirector";
@@ -68,7 +71,27 @@ function ArchivalHud() {
   const edgeCount = useMemexStore(selectEdgeCount);
   const scanning = useMemexStore(selectIsGhostScanning);
   const ghostCount = useMemexStore(selectGhostCount);
-  const wakeGhost = useMemexStore(selectTriggerGhostScan);
+  const triggerScan = useMemexStore(selectTriggerGhostScan);
+  const engineMode = useMemexStore(selectGhostEngineMode);
+  const wakeGhost = useCallback(() => void triggerScan(), [triggerScan]);
+
+  // Key detection: the server reports whether GEMINI_API_KEY is set (never the key);
+  // a key saved in this browser also counts.
+  const [serverLive, setServerLive] = useState(false);
+  // The canvas mounts only after hydration (client-only), so reading storage here is safe.
+  const [userKey, setUserKey] = useState(() => loadUserGeminiKey() !== "");
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const closeSettings = useCallback(() => setSettingsOpen(false), []);
+  const openSettings = useCallback(() => setSettingsOpen(true), []);
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch("/api/ghost", { signal: controller.signal })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((b: { live?: unknown } | null) => setServerLive(b?.live === true))
+      .catch(() => setServerLive(false));
+    return () => controller.abort();
+  }, []);
+  const aiLive = serverLive || userKey;
   const { screenToFlowPosition, fitView } = useReactFlow<MemexNode, AssociativeEdge>();
 
   const [modalOpen, setModalOpen] = useState(false);
@@ -159,6 +182,28 @@ function ArchivalHud() {
           />
           {scanning ? "Scanning archive…" : "⚡ Wake Ghost Engine"}
         </button>
+        <div className="mt-2 flex items-center gap-2">
+          <span
+            role="status"
+            title={`Last scan used the ${engineMode === "live" ? "live Gemini" : "local neural"} engine`}
+            className={`flex-1 rounded-xl border px-2 py-1.5 text-center font-mono text-[10px] font-semibold uppercase tracking-[0.16em] ${
+              aiLive
+                ? "border-accent-ghost/60 text-accent-ghost"
+                : "border-white/10 text-text-muted"
+            }`}
+          >
+            {aiLive ? "[ ⚡ AI: LIVE ]" : "[ ⚡ AI: NEURAL ]"}
+          </span>
+          <button
+            type="button"
+            onClick={openSettings}
+            aria-label="AI settings"
+            title="AI settings"
+            className="cursor-pointer rounded-xl border border-white/10 bg-[#090A0F] px-2.5 py-1.5 font-mono text-[12px] text-text-muted hover:border-accent-ghost/60 hover:text-accent-ghost focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-accent-ghost"
+          >
+            ⚙
+          </button>
+        </div>
         <div
           role="status"
           aria-live="polite"
@@ -178,6 +223,7 @@ function ArchivalHud() {
           {nodesLabel} Nodes // {edgesLabel} Edges
         </div>
       </div>
+      <AISettingsModal open={settingsOpen} onClose={closeSettings} onKeyChange={setUserKey} />
       <AddCardModal open={modalOpen} onClose={closeModal} onSubmit={addCard} />
     </Panel>
   );

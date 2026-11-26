@@ -7,6 +7,7 @@ import type { MemexStore } from "./useMemexStore";
  */
 
 export const selectIsGhostScanning = (s: MemexStore) => s.isGhostScanning;
+export const selectGhostEngineMode = (s: MemexStore) => s.ghostEngineMode;
 export const selectTriggerGhostScan = (s: MemexStore) => s.triggerGhostScan;
 export const selectGhostCount = (s: MemexStore) => s.ghostDiscoveries.length;
 
