@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect } from "react";
+import { memo, useCallback, useEffect, useState } from "react";
 import {
   Background,
   BackgroundVariant,
@@ -16,7 +16,8 @@ import {
 } from "@xyflow/react";
 import { nextArchivalId } from "@/core/graph-engine";
 import { EDGE_COLORS, type AssociativeEdge, type MemexNode } from "@/core/types";
-import { useMemexStore } from "@/store/useMemexStore";
+import { useMemexStore, type MemexStore } from "@/store/useMemexStore";
+import { AddCardModal, type NewCardInput } from "./AddCardModal";
 import { ArchivalCardNode } from "./ArchivalCardNode";
 import { AssociativePulseEdge } from "./AssociativePulseEdge";
 import { MicrofilmShaders } from "./MicrofilmShaders";
@@ -36,38 +37,58 @@ const edgeTypes: EdgeTypes = {
 const CAMERA_MS = 800;
 const FIT_OPTIONS = { padding: 0.2, duration: CAMERA_MS } as const;
 
+// Module-scope selectors: stable identities, each subscribes to one slice so a
+// change elsewhere in the store never re-renders the canvas.
+const selectNodes = (s: MemexStore) => s.nodes;
+const selectEdges = (s: MemexStore) => s.edges;
+const selectNodeCount = (s: MemexStore) => s.nodes.length;
+const selectEdgeCount = (s: MemexStore) => s.edges.length;
+const selectOnNodesChange = (s: MemexStore) => s.onNodesChange;
+const selectOnEdgesChange = (s: MemexStore) => s.onEdgesChange;
+const selectOnConnect = (s: MemexStore) => s.onConnect;
+const selectHydrated = (s: MemexStore) => s.hydrated;
+
 function minimapNodeColor(node: MemexNode): string {
   return node.data.cardType === "ghost" ? EDGE_COLORS.ghost : EDGE_COLORS.human;
 }
 
 function ArchivalHud() {
-  const nodeCount = useMemexStore((s) => s.nodes.length);
-  const edgeCount = useMemexStore((s) => s.edges.length);
+  const nodeCount = useMemexStore(selectNodeCount);
+  const edgeCount = useMemexStore(selectEdgeCount);
   const { screenToFlowPosition, fitView } = useReactFlow<MemexNode, AssociativeEdge>();
 
-  const addNote = useCallback(() => {
-    const { nodes, addNode } = useMemexStore.getState();
-    const center = screenToFlowPosition({
-      x: window.innerWidth / 2,
-      y: window.innerHeight / 2,
-    });
-    // Cascade successive notes so they do not stack exactly.
-    const offset = (nodes.length % 6) * 24;
-    addNode({
-      id: `n-${crypto.randomUUID().slice(0, 8)}`,
-      type: "memexCard",
-      position: { x: center.x - 160 + offset, y: center.y - 105 + offset },
-      style: { width: 320, height: 210 },
-      data: {
-        archivalId: nextArchivalId(nodes),
-        title: "Untitled Note",
-        content: "",
-        cardType: "note",
-        tags: [],
-        createdAt: new Date().toISOString(),
-      },
-    });
-  }, [screenToFlowPosition]);
+  const [modalOpen, setModalOpen] = useState(false);
+  const closeModal = useCallback(() => setModalOpen(false), []);
+  const openModal = useCallback(() => setModalOpen(true), []);
+
+  const addCard = useCallback(
+    (input: NewCardInput) => {
+      const { nodes, addNode } = useMemexStore.getState();
+      const center = screenToFlowPosition({
+        x: window.innerWidth / 2,
+        y: window.innerHeight / 2,
+      });
+      // Cascade successive cards so they do not stack exactly.
+      const offset = (nodes.length % 6) * 24;
+      addNode({
+        id: `n-${crypto.randomUUID().slice(0, 8)}`,
+        type: "memexCard",
+        position: { x: center.x - 160 + offset, y: center.y - 105 + offset },
+        style: { width: 320, height: 210 },
+        data: {
+          archivalId: nextArchivalId(nodes),
+          title: input.title,
+          content: input.content,
+          cardType: input.cardType,
+          tags: input.tags,
+          createdAt: new Date().toISOString(),
+          ...(input.imageUrl ? { imageUrl: input.imageUrl } : {}),
+        },
+      });
+      setModalOpen(false);
+    },
+    [screenToFlowPosition],
+  );
 
   const resetToSeed = useCallback(() => {
     useMemexStore.getState().resetToSeed();
@@ -86,7 +107,7 @@ function ArchivalHud() {
 
   return (
     <Panel position="top-left" className="!m-4">
-      <div className="w-[260px] rounded-2xl border border-white/10 bg-[#141721]/70 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.07),0_12px_36px_rgba(0,0,0,0.55)] backdrop-blur-xl">
+      <div className="w-[260px] rounded-2xl border border-white/10 bg-[#141721]/95 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.07),0_12px_36px_rgba(0,0,0,0.55)]">
         <div className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.2em] text-text-muted">
           <span
             aria-hidden="true"
@@ -100,7 +121,7 @@ function ArchivalHud() {
         </div>
 
         <div className="mt-3 grid grid-cols-2 gap-2">
-          <button type="button" className={addButtonClass} onClick={addNote}>
+          <button type="button" className={addButtonClass} onClick={openModal}>
             + Add Note
           </button>
           <button type="button" className={resetButtonClass} onClick={resetToSeed}>
@@ -117,16 +138,17 @@ function ArchivalHud() {
           {nodesLabel} Nodes // {edgesLabel} Edges
         </div>
       </div>
+      <AddCardModal open={modalOpen} onClose={closeModal} onSubmit={addCard} />
     </Panel>
   );
 }
 
-function Flow() {
-  const nodes = useMemexStore((s) => s.nodes);
-  const edges = useMemexStore((s) => s.edges);
-  const onNodesChange = useMemexStore((s) => s.onNodesChange);
-  const onEdgesChange = useMemexStore((s) => s.onEdgesChange);
-  const onConnect = useMemexStore((s) => s.onConnect);
+const Flow = memo(function Flow() {
+  const nodes = useMemexStore(selectNodes);
+  const edges = useMemexStore(selectEdges);
+  const onNodesChange = useMemexStore(selectOnNodesChange);
+  const onEdgesChange = useMemexStore(selectOnEdgesChange);
+  const onConnect = useMemexStore(selectOnConnect);
 
   return (
     <ReactFlow<MemexNode, AssociativeEdge>
@@ -176,7 +198,7 @@ function Flow() {
       <ArchivalHud />
     </ReactFlow>
   );
-}
+});
 
 /**
  * Client-only canvas. The store starts from the demo seed on both server and
@@ -185,7 +207,7 @@ function Flow() {
  * so there is no hydration mismatch.
  */
 export function MemexCanvas() {
-  const hydrated = useMemexStore((s) => s.hydrated);
+  const hydrated = useMemexStore(selectHydrated);
 
   useEffect(() => {
     const { hydrated: done, hydrate } = useMemexStore.getState();

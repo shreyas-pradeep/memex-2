@@ -105,7 +105,6 @@ function AssociativePulseEdgeImpl({
 
   const origin = data?.origin ?? "human";
   const color = EDGE_COLORS[origin];
-  const glow = origin === "ghost" ? "url(#violet-glow)" : "url(#amber-glow)";
   const strength = Math.min(1, Math.max(0, data?.strength ?? 0.5));
   const rationale = data?.rationale?.trim() ?? "";
   // Stronger associations pulse faster (4.2s down to 1.8s per traverse).
@@ -118,14 +117,15 @@ function AssociativePulseEdgeImpl({
       onMouseLeave={() => setHovered(false)}
       data-edge-id={id}
     >
-      {/* Soft halo underlay. */}
+      {/* Glow: a wide translucent stroke under the crisp line. Plain strokes
+          composite on the GPU, unlike an SVG blur filter. */}
       <path
         d={path}
         fill="none"
         stroke={color}
-        strokeWidth={2}
-        strokeOpacity={active ? 0.55 : 0.28}
-        filter={glow}
+        strokeWidth={active ? 9 : 6}
+        strokeOpacity={active ? 0.22 : 0.1}
+        strokeLinecap="round"
         pointerEvents="none"
       />
       {/* Crisp 1px trail plus the wide invisible hover/click target. */}

@@ -13,6 +13,10 @@ import { Handle, NodeResizer, Position, type NodeProps } from "@xyflow/react";
 import { motion, type Variants } from "framer-motion";
 import { EDGE_COLORS, type MemexNode } from "@/core/types";
 import { useMemexStore } from "@/store/useMemexStore";
+import { TagInput, withPendingTags } from "./TagInput";
+
+/** GPU-composited microfilm tint (replaces the CPU-bound SVG duotone filter). */
+const MICROFILM_IMAGE_FILTER = "grayscale(100%) contrast(125%) sepia(25%)";
 
 const SPRING = { type: "spring", stiffness: 300, damping: 28 } as const;
 const EXIT_TRANSITION = { duration: 0.22, ease: "easeIn" } as const;
@@ -21,11 +25,6 @@ const EXIT_TRANSITION = { duration: 0.22, ease: "easeIn" } as const;
 const EDITOR_BG = "#141721";
 /** Minimum body height (px) so short notes never collapse. */
 const BODY_MIN_HEIGHT = 160;
-
-/** `"a, b ,, a"` to `["a", "b"]`: trimmed, non-empty, unique. */
-function parseTags(raw: string): string[] {
-  return [...new Set(raw.split(",").map((t) => t.trim()).filter(Boolean))];
-}
 
 /** `#RRGGBB` to `rgba(r, g, b, a)`. */
 function rgba(hex: string, alpha: number): string {
@@ -186,7 +185,13 @@ function ArchivalCardNodeImpl({ id, data, selected }: NodeProps<MemexNode>) {
 
   const [isEditing, setIsEditing] = useState(false);
   const [isExiting, setIsExiting] = useState(false);
-  const [draft, setDraft] = useState({ title: "", content: "", tags: "" });
+  const [draft, setDraft] = useState<{
+    title: string;
+    content: string;
+    tags: string[];
+    tagText: string;
+    imageUrl: string;
+  }>({ title: "", content: "", tags: [], tagText: "", imageUrl: "" });
   // Guards against committing twice (Escape followed by the blur it causes).
   const editingRef = useRef(false);
 
@@ -194,11 +199,13 @@ function ArchivalCardNodeImpl({ id, data, selected }: NodeProps<MemexNode>) {
     setDraft({
       title: data.title,
       content: data.content,
-      tags: data.tags.join(", "),
+      tags: data.tags,
+      tagText: "",
+      imageUrl: data.imageUrl ?? "",
     });
     editingRef.current = true;
     setIsEditing(true);
-  }, [data.title, data.content, data.tags]);
+  }, [data.title, data.content, data.tags, data.imageUrl]);
 
   const commitEdit = useCallback(() => {
     if (!editingRef.current) return;
@@ -208,7 +215,8 @@ function ArchivalCardNodeImpl({ id, data, selected }: NodeProps<MemexNode>) {
       // A card must keep a title: blank input leaves the old one in place.
       ...(title ? { title } : {}),
       content: draft.content,
-      tags: parseTags(draft.tags),
+      tags: withPendingTags(draft.tags, draft.tagText),
+      imageUrl: draft.imageUrl.trim(),
     });
     setIsEditing(false);
   }, [id, draft]);
@@ -348,13 +356,23 @@ function ArchivalCardNodeImpl({ id, data, selected }: NodeProps<MemexNode>) {
               className="nodrag nowheel min-h-[4.5rem] w-full flex-1 resize-none rounded-xl px-2.5 py-1.5 text-[12px] leading-relaxed text-text-primary"
               style={fieldStyle}
             />
+            <TagInput
+              tags={draft.tags}
+              text={draft.tagText}
+              accent={accent}
+              onTagsChange={(tags) => setDraft((d) => ({ ...d, tags }))}
+              onTextChange={(tagText) => setDraft((d) => ({ ...d, tagText }))}
+              inputClassName="nodrag nowheel"
+              style={fieldStyle}
+            />
             <input
-              aria-label="Card tags (comma separated)"
-              placeholder="tags, comma separated"
-              value={draft.tags}
-              onChange={(e) => setDraft((d) => ({ ...d, tags: e.target.value }))}
-              className="nodrag nowheel w-full shrink-0 rounded-xl px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-wider"
-              style={{ ...fieldStyle, color: accent }}
+              aria-label="Image URL"
+              type="url"
+              placeholder="image URL (optional)"
+              value={draft.imageUrl}
+              onChange={(e) => setDraft((d) => ({ ...d, imageUrl: e.target.value }))}
+              className="nodrag nowheel w-full shrink-0 rounded-xl px-2.5 py-1.5 font-mono text-[10px] tracking-wider text-text-muted"
+              style={fieldStyle}
             />
           </div>
         ) : (
@@ -379,7 +397,6 @@ function ArchivalCardNodeImpl({ id, data, selected }: NodeProps<MemexNode>) {
                   color: accent,
                   background: rgba(accent, 0.08),
                   border: `1px solid ${rgba(accent, 0.35)}`,
-                  textShadow: `0 0 8px ${rgba(accent, 0.7)}`,
                 }}
               >
                 <span
@@ -393,9 +410,9 @@ function ArchivalCardNodeImpl({ id, data, selected }: NodeProps<MemexNode>) {
               </div>
             ) : null}
 
-            {isArtifact ? <BlueprintPlate archivalId={data.archivalId} /> : null}
+            {isArtifact && !data.imageUrl ? <BlueprintPlate archivalId={data.archivalId} /> : null}
 
-            {!isArtifact && data.imageUrl ? (
+            {data.imageUrl ? (
               <div className="mb-3 h-24 overflow-hidden rounded-xl border border-card-border bg-canvas-bg">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
@@ -403,7 +420,7 @@ function ArchivalCardNodeImpl({ id, data, selected }: NodeProps<MemexNode>) {
                   alt={data.title}
                   draggable={false}
                   className="h-full w-full object-cover"
-                  style={{ filter: "url(#microfilm-duotone)" }}
+                  style={{ filter: MICROFILM_IMAGE_FILTER }}
                 />
               </div>
             ) : null}

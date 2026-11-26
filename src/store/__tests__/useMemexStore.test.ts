@@ -150,6 +150,14 @@ describe("useMemexStore", () => {
     expect(saved.nodes.find((n) => n.id === id)!.data.title).toBe("Edited");
   });
 
+  it("updateCard sets and clears imageUrl", () => {
+    const id = useMemexStore.getState().nodes[0].id;
+    useMemexStore.getState().updateCard(id, { imageUrl: "https://example.com/a.jpg" });
+    expect(useMemexStore.getState().nodes[0].data.imageUrl).toBe("https://example.com/a.jpg");
+    useMemexStore.getState().updateCard(id, { imageUrl: "" });
+    expect("imageUrl" in useMemexStore.getState().nodes[0].data).toBe(false);
+  });
+
   it("updateCard ignores unknown ids and unchanged values", () => {
     const before = useMemexStore.getState().nodes;
     useMemexStore.getState().updateCard("missing", { title: "x" });

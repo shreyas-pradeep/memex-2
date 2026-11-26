@@ -153,7 +153,10 @@ function pick(s: MemexGraphState): MemexGraphState {
 }
 
 /** Card fields that can be edited inline. */
-export type CardUpdate = Partial<Pick<MemexNodeData, "title" | "content" | "tags">>;
+export type CardUpdate = Partial<Pick<MemexNodeData, "title" | "content" | "tags">> & {
+  /** Image URL; an empty string removes the image. */
+  imageUrl?: string;
+};
 
 function sameTags(a: string[], b: string[]): boolean {
   return a.length === b.length && a.every((t, i) => t === b[i]);
@@ -282,17 +285,24 @@ export const useMemexStore = create<MemexStore>()((set, get) => {
       const unchanged =
         (data.title === undefined || data.title === node.data.title) &&
         (data.content === undefined || data.content === node.data.content) &&
-        (data.tags === undefined || sameTags(data.tags, node.data.tags));
+        (data.tags === undefined || sameTags(data.tags, node.data.tags)) &&
+        (data.imageUrl === undefined || data.imageUrl === (node.data.imageUrl ?? ""));
       if (unchanged) return;
-      const patch: CardUpdate = {};
+      const patch: Partial<MemexNodeData> = {};
       if (data.title !== undefined) patch.title = data.title;
       if (data.content !== undefined) patch.content = data.content;
       if (data.tags !== undefined) patch.tags = [...data.tags];
       commit({
         ...pick(state),
-        nodes: state.nodes.map((n) =>
-          n.id === id ? { ...n, data: { ...n.data, ...patch } } : n,
-        ),
+        nodes: state.nodes.map((n) => {
+          if (n.id !== id) return n;
+          const nextData: MemexNodeData = { ...n.data, ...patch };
+          if (data.imageUrl !== undefined) {
+            if (data.imageUrl) nextData.imageUrl = data.imageUrl;
+            else delete nextData.imageUrl;
+          }
+          return { ...n, data: nextData };
+        }),
       });
     },
     connect: (source, target, origin, data) =>
