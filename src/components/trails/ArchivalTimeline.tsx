@@ -98,11 +98,12 @@ export function ArchivalTimeline() {
     [setCenter, getInternalNode],
   );
 
-  if (trailActive || milestones.length === 0) return null;
+  if (trailActive) return null;
 
-  const first = milestones[0].year;
-  const last = milestones[milestones.length - 1].year;
-  const range = first === last ? String(first) : `${first} – ${last}`;
+  const hasMilestones = milestones.length > 0;
+  const first = hasMilestones ? milestones[0].year : 0;
+  const last = hasMilestones ? milestones[milestones.length - 1].year : 0;
+  const range = !hasMilestones ? "" : first === last ? String(first) : `${first} – ${last}`;
 
   return (
     <Panel position="bottom-center" className="!mb-4 !mx-0">
@@ -124,12 +125,17 @@ export function ArchivalTimeline() {
                 <span>Chronology</span>
                 <span style={{ color: EDGE_COLORS.human }}>{range}</span>
               </div>
+              {hasMilestones ? null : (
+                <p className="py-3 text-center font-mono text-[11px] text-text-muted">
+                  No dated cards yet. Add an Event Date / Year to a card to plot it here.
+                </p>
+              )}
               <div
                 className="nowheel nopan overflow-x-auto overflow-y-hidden"
                 role="list"
                 aria-label="Chronological milestones"
               >
-                <div className="relative flex w-max min-w-full items-start gap-1 pt-3 pb-1">
+                <div className={`relative w-max min-w-full items-start gap-1 pt-3 pb-1 ${hasMilestones ? "flex" : "hidden"}`}>
                   <span
                     aria-hidden="true"
                     className="pointer-events-none absolute top-[17px] right-0 left-0 h-px bg-white/15"
