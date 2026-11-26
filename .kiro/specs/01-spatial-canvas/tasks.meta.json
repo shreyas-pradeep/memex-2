@@ -77,6 +77,35 @@
         "chatSessionId": "sess_041aa58c-b7f2-46a5-bc48-42c05958e1e8",
         "timestamp": 1795651093414
       }
+    ],
+    "7. Elevate archival card materiality, fix drag-lock, and polish HUD console": [
+      {
+        "executionId": "ba4b7899-7d7b-4dc1-9f5b-e1d9040e4c12",
+        "chatSessionId": "sess_742b19f2-2714-4fe3-a219-4c85659b97b1",
+        "timestamp": 1795652917578
+      },
+      {
+        "executionId": "ba4b7899-7d7b-4dc1-9f5b-e1d9040e4c12",
+        "chatSessionId": "sess_742b19f2-2714-4fe3-a219-4c85659b97b1",
+        "timestamp": 1795652919249
+      },
+      {
+        "executionId": "ba4b7899-7d7b-4dc1-9f5b-e1d9040e4c12",
+        "chatSessionId": "sess_742b19f2-2714-4fe3-a219-4c85659b97b1",
+        "timestamp": 1795653108463
+      }
+    ],
+    "8. Hardcore 60fps performance overhaul and Archival Ingestion Modal (Types, Tags, Images)": [
+      {
+        "executionId": "5fc08dc9-9873-4d25-93f1-2d022a2e0b78",
+        "chatSessionId": "sess_15f364dc-30e9-4e3d-ada1-d48ce375a26d",
+        "timestamp": 1795653311927
+      },
+      {
+        "executionId": "5fc08dc9-9873-4d25-93f1-2d022a2e0b78",
+        "chatSessionId": "sess_15f364dc-30e9-4e3d-ada1-d48ce375a26d",
+        "timestamp": 1795653604028
+      }
     ]
   }
 }

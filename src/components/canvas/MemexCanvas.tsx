@@ -20,7 +20,6 @@ import { useMemexStore, type MemexStore } from "@/store/useMemexStore";
 import { AddCardModal, type NewCardInput } from "./AddCardModal";
 import { ArchivalCardNode } from "./ArchivalCardNode";
 import { AssociativePulseEdge } from "./AssociativePulseEdge";
-import { MicrofilmShaders } from "./MicrofilmShaders";
 
 // Module-scope so React Flow never sees a new object identity between renders.
 // The graph core types nodes `memexCard` and edges `associative`; the
@@ -216,7 +215,6 @@ export function MemexCanvas() {
 
   return (
     <div style={{ width: "100vw", height: "100vh", background: "#090A0F" }}>
-      <MicrofilmShaders />
       {hydrated ? (
         <ReactFlowProvider>
           <Flow />

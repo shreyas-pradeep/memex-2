@@ -19,6 +19,6 @@ fileMatchPattern: "src/components/**/*"
   - Metadata / IDs: Crisp technical monospace (`font-mono`) for node IDs, timestamps, and similarity scores
 
 ## Anti-AI-Slop Graphics Rules
-1. **Unified Microfilm Filter:** All raster images dropped on the canvas MUST pass through an inline SVG `<filter id="microfilm-duotone">` (`feColorMatrix` + grain) so every image looks like an authentic 1945 archival engraving.
+1. **GPU-Accelerated Microfilm Filter:** All raster images dropped on the canvas MUST use the CSS filter `filter: grayscale(100%) contrast(125%) sepia(25%)` so every image looks like an authentic 1945 archival engraving. Do NOT use SVG `<filter>` elements (e.g. `feColorMatrix`, `feTurbulence`, `feGaussianBlur`) or `backdrop-blur` on cards or edges: they are CPU-rasterized and break 60fps. Edge glow must be a wide, translucent stroke layered under a crisp 1px path.
 2. **Procedural SVGs Only:** Use mathematical inline SVGs with `1px` crisp strokes, crosshair registration marks (`+`), and glowing bezier curves (`#FFB236` for human, `#B388FF` for Ghost AI) with animated `stroke-dasharray` pulses.
 3. **60fps Motion:** Use `framer-motion` spring physics (`stiffness: 300, damping: 28`) for cards. Never animate `top`/`left`/`width`/`height`—only `transform` and `opacity`. Camera transitions (`setCenter` / `fitView`) must glide smoothly (`duration: 800ms`).

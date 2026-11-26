@@ -48,3 +48,11 @@
   - In `src/components/canvas/MemexCanvas.tsx`, style the top-left HUD as a tactile instrument console: `rounded-2xl` glassmorphism chassis, tactile "+ ADD NOTE" and "RESET SEED" buttons, and amber glow on stats (e.g. 008 NODES // 009 EDGES). Add `proOptions={{ hideAttribution: true }}` to `<ReactFlow>`.
   - Run `npx tsc --noEmit` and `npm test` to verify all tests pass, then commit with: `refactor(ui): elevate archival materiality, fix drag-lock, and polish 1945 typologies`.
   - _Requirements: 1.1, 1.2, 1.3_
+
+- [x] 8. Hardcore 60fps performance overhaul and Archival Ingestion Modal (Types, Tags, Images)
+  - 60fps Performance: Remove all CPU-heavy SVG `<filter>` references and `backdrop-blur` from `<ArchivalCardNode />` and `<AssociativePulseEdge />`. Replace edge glow with GPU-accelerated dual-layered SVG paths. Memoize store selectors in `MemexCanvas.tsx` to stop whole-canvas re-renders.
+  - Archival Ingestion Modal: Create `src/components/canvas/AddCardModal.tsx` triggered by "+ ADD NOTE" button. Allows setting Title, Content, Card Type (`note` | `quote` | `artifact`), dynamic interactive Tags (add with Enter/comma, click ✕ to remove), and optional Image URL (with 3 1945 historical quick-fill presets).
+  - Enhanced In-Card Editing: Update `ArchivalCardNode.tsx` edit mode to allow adding/deleting tags and setting/updating image URLs directly on any existing card.
+  - Hardware-Accelerated Microfilm Images: Render card images using GPU CSS filters (`grayscale(100%) contrast(125%) sepia(25%)`) so archival tinting is instantaneous and buttery smooth.
+  - Verify with `npx tsc --noEmit` and `npm test`, then commit: `feat(canvas): 60fps gpu acceleration and full archival card creation modal`.
+  - _Requirements: 1.1, 1.2, 1.3_

@@ -11,7 +11,7 @@ This specification defines the mathematical graph core, state persistence, and 6
 #### Acceptance Criteria
 1. WHEN a user creates a new card at coordinates `(x, y)`, THE SYSTEM SHALL generate a unique archival ID (e.g., `MEM-1945-XXXX`), timestamp, title, content body, tags, and source type (`note` | `quote` | `artifact` | `ghost-insight`).
 2. WHEN a user drags a card on the canvas, THE SYSTEM SHALL update its `(x, y)` spatial coordinates at 60fps and persist the state automatically.
-3. WHEN a card contains an image URL, THE SYSTEM SHALL render the image through the `#microfilm-duotone` SVG filter to maintain a unified 1945 archival aesthetic.
+3. WHEN a card contains an image URL, THE SYSTEM SHALL render the image through the GPU-accelerated CSS filter `grayscale(100%) contrast(125%) sepia(25%)` to maintain a unified 1945 archival aesthetic.
 
 ### Requirement 2: Associative Links (Edges) & Graph Integrity
 **User Story:** As a thinker, I want to draw associative links between any two cards and delete cards safely, so that my knowledge graph remains corruption-free.
