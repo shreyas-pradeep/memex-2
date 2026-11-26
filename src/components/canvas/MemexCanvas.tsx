@@ -17,6 +17,7 @@ import {
 import { nextArchivalId } from "@/core/graph-engine";
 import { EDGE_COLORS, type AssociativeEdge, type MemexNode } from "@/core/types";
 import { useMemexStore, type MemexStore } from "@/store/useMemexStore";
+import { ArchivalTimeline } from "../trails/ArchivalTimeline";
 import { TrailCameraDirector } from "../trails/TrailCameraDirector";
 import { TrailPlaybackDock } from "../trails/TrailPlaybackDock";
 import { TrailSelectorMenu } from "../trails/TrailSelectorMenu";
@@ -85,6 +86,8 @@ function ArchivalHud() {
           tags: input.tags,
           createdAt: new Date().toISOString(),
           ...(input.imageUrl ? { imageUrl: input.imageUrl } : {}),
+          ...(input.year !== undefined ? { year: input.year } : {}),
+          ...(input.date !== undefined ? { date: input.date } : {}),
         },
       });
       setModalOpen(false);
@@ -201,6 +204,7 @@ const Flow = memo(function Flow() {
       <TrailSelectorMenu />
       <TrailCameraDirector />
       <TrailPlaybackDock />
+      <ArchivalTimeline />
     </ReactFlow>
   );
 });

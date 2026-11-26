@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
+import { parseEventDateInput } from "@/core/trail-engine";
 import { EDGE_COLORS, type MemexCardType } from "@/core/types";
 import { TagInput, withPendingTags } from "./TagInput";
 
@@ -14,6 +15,10 @@ export interface NewCardInput {
   tags: string[];
   /** Omitted when no image was given. */
   imageUrl?: string;
+  /** Event year (e.g. 2026). Omitted for partial/full dates or empty input. */
+  year?: number;
+  /** Event date `YYYY-MM` or `YYYY-MM-DD`. Omitted otherwise. */
+  date?: string;
 }
 
 const CARD_TYPES: readonly NewCardType[] = ["note", "quote", "artifact"];
@@ -52,6 +57,9 @@ function ModalBody({ onClose, onSubmit }: Omit<AddCardModalProps, "open">) {
   const [tags, setTags] = useState<string[]>([]);
   const [tagText, setTagText] = useState("");
   const [imageUrl, setImageUrl] = useState("");
+  const [eventDate, setEventDate] = useState("");
+  const dateParse = parseEventDateInput(eventDate);
+  const dateInvalid = !dateParse.ok;
   const titleRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -60,6 +68,7 @@ function ModalBody({ onClose, onSubmit }: Omit<AddCardModalProps, "open">) {
 
   const submit = (e?: FormEvent) => {
     e?.preventDefault();
+    if (!dateParse.ok) return;
     const url = imageUrl.trim();
     onSubmit({
       title: title.trim() || "Untitled Note",
@@ -67,6 +76,8 @@ function ModalBody({ onClose, onSubmit }: Omit<AddCardModalProps, "open">) {
       cardType,
       tags: withPendingTags(tags, tagText),
       ...(url ? { imageUrl: url } : {}),
+      ...(dateParse.year !== undefined ? { year: dateParse.year } : {}),
+      ...(dateParse.date !== undefined ? { date: dateParse.date } : {}),
     });
   };
 
@@ -181,6 +192,26 @@ function ModalBody({ onClose, onSubmit }: Omit<AddCardModalProps, "open">) {
           </div>
         </div>
 
+        <div className="flex flex-col gap-1">
+          <label htmlFor="add-card-date" className={LABEL_CLASS}>
+            Event Date / Year (Optional)
+          </label>
+          <input
+            id="add-card-date"
+            value={eventDate}
+            onChange={(e) => setEventDate(e.target.value)}
+            placeholder="2026, 1945, 2024-10-12"
+            aria-invalid={dateInvalid}
+            aria-describedby={dateInvalid ? "add-card-date-error" : undefined}
+            className={`${FIELD_CLASS} font-mono text-[12px]`}
+          />
+          {dateInvalid ? (
+            <p id="add-card-date-error" role="alert" className="font-mono text-[11px] text-[#B388FF]">
+              Use a year (1945) or a date (1945-07, 2024-10-12). Leave blank for no date.
+            </p>
+          ) : null}
+        </div>
+
         <div className="mt-2 flex justify-end gap-2">
           <button
             type="button"
@@ -191,7 +222,8 @@ function ModalBody({ onClose, onSubmit }: Omit<AddCardModalProps, "open">) {
           </button>
           <button
             type="submit"
-            className="cursor-pointer rounded-xl border border-[#FFB236] bg-[#FFB236] px-4 py-2 font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-[#090A0F] hover:brightness-110"
+            disabled={dateInvalid}
+            className="cursor-pointer rounded-xl border border-[#FFB236] bg-[#FFB236] px-4 py-2 font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-[#090A0F] hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
           >
             Add Card
           </button>

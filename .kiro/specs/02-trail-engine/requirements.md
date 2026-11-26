@@ -39,3 +39,12 @@ This specification defines Associative Trails for Memex 2.0: ordered sequences o
 3. WHILE Auto-Play is on, THE SYSTEM SHALL show a 5-second countdown progress bar and advance one stop when it completes.
 4. WHEN Auto-Play reaches the last stop, THE SYSTEM SHALL turn Auto-Play off.
 5. WHEN a user selects Exit, THE SYSTEM SHALL end playback and dismiss the dock.
+
+### Requirement 5: Chronological Knowledge Timeline
+**User Story:** As a researcher, I want my dated cards laid out on a timeline, so that I can see the history of an idea and jump to any moment in it.
+
+#### Acceptance Criteria
+1. WHEN cards carry an optional `year` (for example 1931, 1945, 2026) or `date` (`YYYY`, `YYYY-MM`, `YYYY-MM-DD`), THE SYSTEM SHALL extract them, sort them chronologically, and plot them as milestones on a scrollable horizontal timeline bar at the bottom of the canvas.
+2. WHEN a user clicks a timeline milestone, THE SYSTEM SHALL smoothly center the canvas viewport on the corresponding card and give that card a temporary highlight pulse.
+3. WHILE the Trail Playback Dock is active, THE SYSTEM SHALL hide the timeline so the two do not overlap, and restore the user's open/collapsed choice on exit.
+4. IF a card has no explicit date, THEN THE SYSTEM SHALL keep it visible on the canvas, exclude it from timeline plotting, and SHALL NOT assign it an invented date.

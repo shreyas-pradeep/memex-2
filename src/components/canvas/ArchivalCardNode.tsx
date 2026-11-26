@@ -11,9 +11,10 @@ import {
 } from "react";
 import { Handle, NodeResizer, Position, type NodeProps } from "@xyflow/react";
 import { motion, type Variants } from "framer-motion";
+import { formatEventDate, parseEventDateInput } from "@/core/trail-engine";
 import { EDGE_COLORS, type MemexNode } from "@/core/types";
 import { DIM_OPACITY, useNodeTrailState } from "@/store/trail-selectors";
-import { useMemexStore } from "@/store/useMemexStore";
+import { useMemexStore, type MemexStore } from "@/store/useMemexStore";
 import { TagInput, withPendingTags } from "./TagInput";
 
 /** GPU-composited microfilm tint (replaces the CPU-bound SVG duotone filter). */
@@ -184,6 +185,10 @@ function ArchivalCardNodeImpl({ id, data, selected }: NodeProps<MemexNode>) {
   const accent = isGhost ? EDGE_COLORS.ghost : EDGE_COLORS.human;
   const variants = cardVariants(accent, isGhost);
   const trailState = useNodeTrailState(id);
+  const highlighted = useMemexStore(
+    useCallback((s: MemexStore) => s.highlightedNodeId === id, [id]),
+  );
+  const eventLabel = formatEventDate(data);
   const trailOpacity = trailState === "dim" ? DIM_OPACITY : 1;
 
   const [isEditing, setIsEditing] = useState(false);
@@ -194,7 +199,9 @@ function ArchivalCardNodeImpl({ id, data, selected }: NodeProps<MemexNode>) {
     tags: string[];
     tagText: string;
     imageUrl: string;
-  }>({ title: "", content: "", tags: [], tagText: "", imageUrl: "" });
+    eventDate: string;
+  }>({ title: "", content: "", tags: [], tagText: "", imageUrl: "", eventDate: "" });
+  const dateInvalid = !parseEventDateInput(draft.eventDate).ok;
   // Guards against committing twice (Escape followed by the blur it causes).
   const editingRef = useRef(false);
 
@@ -205,16 +212,21 @@ function ArchivalCardNodeImpl({ id, data, selected }: NodeProps<MemexNode>) {
       tags: data.tags,
       tagText: "",
       imageUrl: data.imageUrl ?? "",
+      eventDate: formatEventDate(data) ?? "",
     });
     editingRef.current = true;
     setIsEditing(true);
-  }, [data.title, data.content, data.tags, data.imageUrl]);
+  }, [data]);
 
   const commitEdit = useCallback(() => {
     if (!editingRef.current) return;
     editingRef.current = false;
     const title = draft.title.trim();
+    // An unparseable date is discarded on close (the field shows the error
+    // while editing); the previous date stays.
+    const parsed = parseEventDateInput(draft.eventDate);
     useMemexStore.getState().updateCard(id, {
+      ...(parsed.ok ? { year: parsed.year ?? null, date: parsed.date ?? null } : {}),
       // A card must keep a title: blank input leaves the old one in place.
       ...(title ? { title } : {}),
       content: draft.content,
@@ -298,6 +310,19 @@ function ArchivalCardNodeImpl({ id, data, selected }: NodeProps<MemexNode>) {
           } as CSSProperties
         }
       >
+        {/* Timeline highlight: opacity + transform pulse over a static box-shadow. */}
+        {highlighted ? (
+          <motion.span
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 rounded-2xl"
+            initial={{ opacity: 0, scale: 1 }}
+            animate={{ opacity: [0, 1, 0.35, 1, 0], scale: [1, 1.03, 1, 1.03, 1] }}
+            transition={{ duration: 1.7, ease: "easeInOut" }}
+            style={{
+              boxShadow: `0 0 0 2px ${rgba(accent, 1)}, 0 0 40px 8px ${rgba(accent, 0.6)}`,
+            }}
+          />
+        ) : null}
         {/* Trail glow: a static box-shadow whose opacity fades (GPU, no filter). */}
         <span
           aria-hidden="true"
@@ -395,6 +420,20 @@ function ArchivalCardNodeImpl({ id, data, selected }: NodeProps<MemexNode>) {
               className="nodrag nowheel w-full shrink-0 rounded-xl px-2.5 py-1.5 font-mono text-[10px] tracking-wider text-text-muted"
               style={fieldStyle}
             />
+            <input
+              aria-label="Event date or year"
+              aria-invalid={dateInvalid}
+              placeholder="event date / year (2026, 1945, 2024-10-12)"
+              value={draft.eventDate}
+              onChange={(e) => setDraft((d) => ({ ...d, eventDate: e.target.value }))}
+              className="nodrag nowheel w-full shrink-0 rounded-xl px-2.5 py-1.5 font-mono text-[10px] tracking-wider text-text-muted"
+              style={fieldStyle}
+            />
+            {dateInvalid ? (
+              <p role="alert" className="shrink-0 font-mono text-[10px]" style={{ color: EDGE_COLORS.ghost }}>
+                Use 1945, 1945-07 or 2024-10-12. Invalid dates are not saved.
+              </p>
+            ) : null}
           </div>
         ) : (
           <div
@@ -443,6 +482,12 @@ function ArchivalCardNodeImpl({ id, data, selected }: NodeProps<MemexNode>) {
                   className="h-full w-full object-cover"
                   style={{ filter: MICROFILM_IMAGE_FILTER }}
                 />
+              </div>
+            ) : null}
+
+            {eventLabel ? (
+              <div className="relative mb-1 font-mono text-[10px] uppercase tracking-[0.14em] text-text-muted">
+                ◷ {eventLabel}
               </div>
             ) : null}
 

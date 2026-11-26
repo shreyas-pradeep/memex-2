@@ -24,6 +24,13 @@ export type MemexNodeData = {
   imageUrl?: string;
   /** Ghost AI confidence in [0, 1]. */
   confidence?: number;
+  /**
+   * Optional event date: `YYYY`, `YYYY-MM` or `YYYY-MM-DD`. Absent when unset
+   * (never `null`, never invented). Used only when `year` is absent.
+   */
+  date?: string;
+  /** Optional event year (integer, e.g. 1945 or 2026). Takes precedence over `date`. */
+  year?: number;
 };
 
 export type AssociativeEdgeData = {

@@ -162,7 +162,15 @@ function pick(s: MemexGraphState): MemexGraphState {
 export type CardUpdate = Partial<Pick<MemexNodeData, "title" | "content" | "tags">> & {
   /** Image URL; an empty string removes the image. */
   imageUrl?: string;
+  /** Event year; `null` removes it. */
+  year?: number | null;
+  /** Event date (`YYYY-MM` or `YYYY-MM-DD`); `null` removes it. */
+  date?: string | null;
 };
+
+/** How long a timeline-triggered card highlight lasts. */
+export const HIGHLIGHT_MS = 1800;
+let highlightTimer: ReturnType<typeof setTimeout> | undefined;
 
 function sameTags(a: string[], b: string[]): boolean {
   return a.length === b.length && a.every((t, i) => t === b[i]);
@@ -182,6 +190,14 @@ export interface MemexStore extends MemexGraphState {
   activeTrailIndex: number;
   isPlayingAuto: boolean;
 
+  /** Session-only: user's choice for the chronological timeline bar. Not persisted. */
+  isTimelineOpen: boolean;
+  /** Session-only: card briefly pulsing after a timeline jump. Auto-clears. */
+  highlightedNodeId: string | null;
+  toggleTimeline: () => void;
+  setTimelineOpen: (open: boolean) => void;
+  highlightNode: (id: string) => void;
+
   /** True once `hydrate()` has run on the client. */
   hydrated: boolean;
 
@@ -200,7 +216,7 @@ export interface MemexStore extends MemexGraphState {
   // Graph engine actions
   addNode: (node: MemexNode) => void;
   removeNodes: (ids: string[]) => void;
-  /** Updates a card's title, content and/or tags. No-op when nothing changes. */
+  /** Updates a card's title, content, tags, image and/or event date. No-op when nothing changes. */
   updateCard: (id: string, data: CardUpdate) => void;
   connect: (
     source: string,
@@ -259,6 +275,19 @@ export const useMemexStore = create<MemexStore>()((set, get) => {
     ...freshSeed(),
     ...IDLE_PLAYBACK,
     hydrated: false,
+    isTimelineOpen: true,
+    highlightedNodeId: null,
+
+    toggleTimeline: () => set({ isTimelineOpen: !get().isTimelineOpen }),
+    setTimelineOpen: (open) => set({ isTimelineOpen: open }),
+    highlightNode: (id) => {
+      if (highlightTimer !== undefined) clearTimeout(highlightTimer);
+      set({ highlightedNodeId: id });
+      highlightTimer = setTimeout(() => {
+        highlightTimer = undefined;
+        if (get().highlightedNodeId === id) set({ highlightedNodeId: null });
+      }, HIGHLIGHT_MS);
+    },
 
     hydrate: () => {
       set({ ...(loadPersistedGraph() ?? freshSeed()), ...IDLE_PLAYBACK, hydrated: true });
@@ -326,7 +355,9 @@ export const useMemexStore = create<MemexStore>()((set, get) => {
         (data.title === undefined || data.title === node.data.title) &&
         (data.content === undefined || data.content === node.data.content) &&
         (data.tags === undefined || sameTags(data.tags, node.data.tags)) &&
-        (data.imageUrl === undefined || data.imageUrl === (node.data.imageUrl ?? ""));
+        (data.imageUrl === undefined || data.imageUrl === (node.data.imageUrl ?? "")) &&
+        (data.year === undefined || (data.year ?? undefined) === node.data.year) &&
+        (data.date === undefined || (data.date ?? undefined) === node.data.date);
       if (unchanged) return;
       const patch: Partial<MemexNodeData> = {};
       if (data.title !== undefined) patch.title = data.title;
@@ -340,6 +371,14 @@ export const useMemexStore = create<MemexStore>()((set, get) => {
           if (data.imageUrl !== undefined) {
             if (data.imageUrl) nextData.imageUrl = data.imageUrl;
             else delete nextData.imageUrl;
+          }
+          if (data.year !== undefined) {
+            if (data.year === null) delete nextData.year;
+            else nextData.year = data.year;
+          }
+          if (data.date !== undefined) {
+            if (data.date === null) delete nextData.date;
+            else nextData.date = data.date;
           }
           return { ...n, data: nextData };
         }),

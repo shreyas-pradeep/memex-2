@@ -15,3 +15,13 @@
   - Dim non-trail cards and edges to 0.2 opacity and glow trail cards in `ArchivalCardNode.tsx` and `AssociativePulseEdge.tsx` without SVG filters or backdrop-blur.
   - Verify with `npx tsc --noEmit` and `npm test`, then commit: `feat(spec-02): implement Vannevar Bush trail engine and cinematic playback dock`.
   - _Requirements: 1.1, 1.2, 3.1, 3.2, 4.1, 4.2, 4.3, 4.4, 4.5_
+- [x] 4. Implement Chronological Archival Timeline Navigator
+  - Data model: add optional `date?: string` (`YYYY`, `YYYY-MM`, `YYYY-MM-DD`) and `year?: number` to `MemexNodeData` in `src/core/types.ts`. Effective sort value: `year` if present, else parsed `date`; undated or unparseable cards are excluded, never given invented dates. Seed a few dated cards in `src/data/demo-seed.ts`.
+  - Core: add pure `getChronologicalNodes`, `getEventSortKey`, `getEventYear`, `formatEventDate`, `parseEventDateInput` to `src/core/trail-engine.ts` (stable ascending sort, ties by `createdAt` then `id`).
+  - Store: `updateCard` accepts `year`/`date` (`null` clears); add session-only `isTimelineOpen`, `toggleTimeline`/`setTimelineOpen`, and auto-clearing `highlightedNodeId`/`highlightNode`; none of it is persisted or exported.
+  - Input: `AddCardModal.tsx` has an "Event Date / Year (Optional)" field with an inline error for unparseable input; `ArchivalCardNode.tsx` edit mode can edit it and shows the date.
+  - Timeline UI: `src/components/trails/ArchivalTimeline.tsx`, a scrollable bottom ticker whose range follows the dated cards, with a `[ ⏱️ TIMELINE ]` collapse toggle, mounted in `MemexCanvas.tsx`. It is hidden while a Trail Playback is active and the user's choice returns on exit.
+  - Camera jump: milestone click calls `setCenter` (zoom 1.15, 800ms, card center) and pulses the card using `transform`/`opacity`/`box-shadow` only.
+  - Tests: Property 4 in `src/core/__tests__/trail.property.test.ts` (200 runs): ascending, dated-only, permutation of dated input, undated never appear. Store tests cover year/date round-trip.
+  - Verify with `npx tsc --noEmit` and `npm test`, then commit: `feat(spec-02): implement universal chronological knowledge timeline`.
+  - _Requirements: 5.1, 5.2, 5.3, 5.4_

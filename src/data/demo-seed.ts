@@ -33,6 +33,7 @@ export const seedNodes: MemexNode[] = [
       "Vannevar Bush's essay in The Atlantic Monthly, July 1945. Written as the war ended, it asks scientists to turn from building weapons to organizing the growing mass of human knowledge so it can actually be used.",
     tags: ["bush", "1945", "essay", "atlantic"],
     createdAt: "1945-07-01T09:00:00.000Z",
+    date: "1945-07",
     imageUrl: "/file.svg",
   }),
   node("n-memex", 2, 460, -40, {
@@ -58,6 +59,7 @@ export const seedNodes: MemexNode[] = [
       "Built by Bush and colleagues at MIT around 1931, this room-sized mechanical analog computer solved differential equations with shafts, gears and integrators. It shaped his view of what machines could do for thinking.",
     tags: ["mit", "analog", "computing", "1931"],
     createdAt: "1945-07-04T08:45:00.000Z",
+    year: 1931,
   }),
   node("n-osrd", 5, 440, 400, {
     title: "Office of Scientific Research and Development",
@@ -66,6 +68,7 @@ export const seedNodes: MemexNode[] = [
       "Bush directed the OSRD during World War II, coordinating about 6,000 scientists on radar, the proximity fuze and the Manhattan Project. His 1945 report Science, The Endless Frontier led to the National Science Foundation.",
     tags: ["osrd", "wwii", "policy", "science"],
     createdAt: "1945-07-05T14:00:00.000Z",
+    date: "1941-06",
   }),
   node("n-eniac", 6, 920, 420, {
     title: "ENIAC Unveiled",
@@ -74,6 +77,7 @@ export const seedNodes: MemexNode[] = [
       "Completed in late 1945 at the University of Pennsylvania by Eckert and Mauchly, ENIAC was the first large general-purpose electronic digital computer. It was programmed by rewiring, and operated by six women including Jean Bartik and Kay McNulty.",
     tags: ["eniac", "digital", "1945", "upenn"],
     createdAt: "1945-11-15T16:20:00.000Z",
+    year: 1945,
   }),
   node("n-engelbart", 7, 1380, 200, {
     title: "Engelbart's Mother of All Demos",
@@ -82,6 +86,7 @@ export const seedNodes: MemexNode[] = [
       "In 1968 Douglas Engelbart demonstrated the mouse, hypertext links and shared-screen collaboration. He had read As We May Think as a young Navy radar technician in 1945 and credited it as the seed of his work.",
     tags: ["engelbart", "1968", "hypertext", "legacy"],
     createdAt: "1945-12-01T12:00:00.000Z",
+    date: "1968-12-09",
   }),
   node("n-ghost", 8, 920, 800, {
     title: "Ghost Insight: Memory as Network",

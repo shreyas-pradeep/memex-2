@@ -3,12 +3,16 @@ import { describe, expect, it } from "vitest";
 import {
   createTrail,
   forgeCustomTrail,
+  formatEventDate,
+  getChronologicalNodes,
+  getEventSortKey,
   getNextTrailIndex,
+  parseEventDateInput,
   getPrevTrailIndex,
   getTrailEdges,
   removeNodeFromTrail,
 } from "../trail-engine";
-import type { AssociativeEdge, LinkOrigin } from "../types";
+import type { AssociativeEdge, LinkOrigin, MemexNode } from "../types";
 
 const RUNS = { numRuns: 200 } as const;
 
@@ -153,5 +157,101 @@ describe("trail helpers", () => {
       }),
       RUNS,
     );
+  });
+});
+
+describe("Property 4: Chronological timeline", () => {
+  const dateArb = fc
+    .tuple(
+      fc.integer({ min: 1800, max: 2100 }),
+      fc.integer({ min: 1, max: 12 }),
+      fc.integer({ min: 1, max: 28 }),
+      fc.constantFrom("y", "ym", "ymd"),
+    )
+    .map(([y, m, d, shape]) => {
+      const mm = String(m).padStart(2, "0");
+      const dd = String(d).padStart(2, "0");
+      return shape === "y" ? String(y) : shape === "ym" ? `${y}-${mm}` : `${y}-${mm}-${dd}`;
+    });
+  const junkDateArb = fc.constantFrom("", "abc", "2023-02-30", "1945-13", "19-07", "1945/07/02");
+
+  const nodeArb = (id: string): fc.Arbitrary<MemexNode> =>
+    fc
+      .record({
+        year: fc.option(fc.integer({ min: 1000, max: 2100 }), { nil: undefined }),
+        date: fc.option(fc.oneof(dateArb, junkDateArb), { nil: undefined }),
+        createdAt: fc.constantFrom(
+          "1945-07-01T00:00:00.000Z",
+          "2020-01-01T00:00:00.000Z",
+          "2026-01-01T00:00:00.000Z",
+        ),
+      })
+      .map(({ year, date, createdAt }) => ({
+        id,
+        type: "memexCard" as const,
+        position: { x: 0, y: 0 },
+        data: {
+          archivalId: id,
+          title: id,
+          content: "",
+          cardType: "note" as const,
+          tags: [],
+          createdAt,
+          ...(year !== undefined ? { year } : {}),
+          ...(date !== undefined ? { date } : {}),
+        },
+      }));
+
+  const nodesArb = fc
+    .uniqueArray(idArb, { minLength: 0, maxLength: 25 })
+    .chain((ids) => fc.tuple(...ids.map(nodeArb)))
+    .map((nodes) => nodes as MemexNode[]);
+
+  it("is ascending, dated-only, and a permutation of the dated input", () => {
+    fc.assert(
+      fc.property(nodesArb, (nodes) => {
+        const out = getChronologicalNodes(nodes);
+        const keys = out.map((n) => getEventSortKey(n.data));
+        for (const k of keys) expect(k).not.toBeNull();
+        for (let i = 0; i + 1 < keys.length; i++) {
+          expect(keys[i] as number).toBeLessThanOrEqual(keys[i + 1] as number);
+        }
+        const datedIds = nodes.filter((n) => getEventSortKey(n.data) !== null).map((n) => n.id);
+        expect([...out.map((n) => n.id)].sort()).toEqual([...datedIds].sort());
+        const undated = new Set(
+          nodes.filter((n) => getEventSortKey(n.data) === null).map((n) => n.id),
+        );
+        for (const n of out) expect(undated.has(n.id)).toBe(false);
+      }),
+      RUNS,
+    );
+  });
+
+  it("is deterministic regardless of input order and does not mutate input", () => {
+    fc.assert(
+      fc.property(nodesArb, (nodes) => {
+        const snapshot = nodes.map((n) => n.id);
+        const a = getChronologicalNodes(nodes).map((n) => n.id);
+        const b = getChronologicalNodes([...nodes].reverse()).map((n) => n.id);
+        expect(a).toEqual(b);
+        expect(nodes.map((n) => n.id)).toEqual(snapshot);
+      }),
+      RUNS,
+    );
+  });
+
+  it("parses event date input and never invents a date", () => {
+    expect(parseEventDateInput("")).toEqual({ ok: true });
+    expect(parseEventDateInput(" 2026 ")).toEqual({ ok: true, year: 2026 });
+    expect(parseEventDateInput("2024-10-12")).toEqual({ ok: true, date: "2024-10-12" });
+    expect(parseEventDateInput("1945-07")).toEqual({ ok: true, date: "1945-07" });
+    for (const bad of ["abc", "2023-02-30", "2024-13", "12345", "1945-7-2"]) {
+      expect(parseEventDateInput(bad)).toEqual({ ok: false });
+    }
+    expect(getEventSortKey({})).toBeNull();
+    expect(getEventSortKey({ date: "nope" })).toBeNull();
+    expect(getEventSortKey({ year: 1945, date: "1999-01-01" })).toBe(19450000);
+    expect(formatEventDate({ date: "1945-07" })).toBe("1945-07");
+    expect(formatEventDate({})).toBeNull();
   });
 });

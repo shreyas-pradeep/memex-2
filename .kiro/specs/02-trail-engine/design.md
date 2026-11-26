@@ -20,3 +20,28 @@ Traversal convention: for a trail of length `N`, indices are `0..N-1`; an empty 
 - **Property 3 (Empty Trail Graceful Exit):** For any index, next/prev on a length-0 trail return `-1` without throwing; a trail emptied by deletions produces no edges and a valid forge result.
 
 File: `src/core/__tests__/trail.property.test.ts`.
+
+## 3. Chronological Knowledge Timeline (Requirement 5)
+
+### Data model
+`MemexNodeData` gains optional `year?: number` (integer, e.g. 1931, 2026) and `date?: string` (`YYYY`, `YYYY-MM` or `YYYY-MM-DD`). Both are absent (not `null`) when unset, travel with the node through persistence and export, and older graphs stay valid.
+
+Effective sortable value (`getEventSortKey`): `year` if it is an integer, else the parsed `date`; the value is `year * 10000 + month * 100 + day` with missing parts as 0. Missing or unparseable input yields `null`: the card is excluded and never given an invented date (Req 5.4).
+
+### Pure logic (`src/core/trail-engine.ts`)
+- `getChronologicalNodes(nodes)`: dated nodes only, ascending by sort key, ties by `createdAt` then `id`; deterministic and non-mutating.
+- `getEventSortKey`, `getEventYear`, `formatEventDate`, and `parseEventDateInput` (blank = no date, `1945` becomes `year`, `1945-07` / `2024-10-12` become `date`, anything else is rejected).
+
+### State
+`isTimelineOpen` (default true), `toggleTimeline`, `setTimelineOpen`, and `highlightedNodeId` with `highlightNode(id)` (auto-clears after 1800ms) live in `useMemexStore`. All are session-only. The timeline derives its milestones from `nodes` through a string-signature selector, so card drags do not re-render it. `updateCard` accepts `year`/`date` (`null` clears).
+
+### UI
+- `src/components/trails/ArchivalTimeline.tsx`: floating bottom ticker, horizontally scrollable, range label follows the dated cards. `[ ⏱️ TIMELINE ]` collapses or expands it. It is not rendered while `activeTrailId !== null`; the stored choice is untouched and returns on exit.
+- Milestone click: `setCenter(x + w/2, y + h/2, { zoom: 1.15, duration: 800 })` (same as `TrailCameraDirector`), then `highlightNode`.
+- `ArchivalCardNode.tsx` pulses a glow layer (`opacity` and `transform` over a static `box-shadow`) while highlighted. No SVG filters, no `backdrop-blur`.
+- `AddCardModal.tsx` and card edit mode have the event date field with an inline error for unparseable input.
+
+### Correctness Property
+- **Property 4 (Chronological Monotonicity):** for any nodes with arbitrary `year`/`date` (including invalid strings), `getChronologicalNodes` returns only dated nodes, in ascending sort-key order, as a permutation of the dated input; undated nodes never appear. Input order does not change the result.
+
+File: `src/core/__tests__/trail.property.test.ts` (200 runs).

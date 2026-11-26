@@ -291,4 +291,27 @@ describe("useMemexStore trail playback", () => {
     expect(t.nodeIds).toEqual(["n-memex", "n-eniac"]);
     expect(useMemexStore.getState().forgeTrail("Solo", "", ["n-memex"])).toBeNull();
   });
+  it("updateCard sets and clears event year/date, and export/import carries them", () => {
+    useMemexStore.getState().updateCard("n-memex", { year: 2026 });
+    expect(useMemexStore.getState().nodes.find((n) => n.id === "n-memex")!.data.year).toBe(2026);
+    const json = useMemexStore.getState().exportJson();
+    useMemexStore.getState().resetToSeed();
+    useMemexStore.getState().importJson(json);
+    expect(useMemexStore.getState().nodes.find((n) => n.id === "n-memex")!.data.year).toBe(2026);
+    expect(useMemexStore.getState().exportJson()).toBe(json);
+    useMemexStore.getState().updateCard("n-memex", { year: null, date: "2024-10-12" });
+    const data = useMemexStore.getState().nodes.find((n) => n.id === "n-memex")!.data;
+    expect("year" in data).toBe(false);
+    expect(data.date).toBe("2024-10-12");
+  });
+
+  it("timeline choice and highlight are session-only and not exported", () => {
+    useMemexStore.getState().setTimelineOpen(false);
+    useMemexStore.getState().highlightNode("n-asw");
+    expect(useMemexStore.getState().highlightedNodeId).toBe("n-asw");
+    const json = useMemexStore.getState().exportJson();
+    expect(json).not.toContain("isTimelineOpen");
+    expect(json).not.toContain("highlightedNodeId");
+    useMemexStore.getState().setTimelineOpen(true);
+  });
 });
