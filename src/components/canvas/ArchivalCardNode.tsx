@@ -307,8 +307,8 @@ function ArchivalCardNodeImpl({ id, data, selected }: NodeProps<MemexNode>) {
             >
               {data.cardType}
             </span>
-            {/* `nodrag` stays on this button: React Flow's drag listener is native,
-                so React's stopPropagation cannot keep a press here from starting a drag. */}
+            {/* No `nodrag`: only the edit fields opt out of dragging. A plain click
+                stays under `nodeDragThreshold`, so it never starts a drag. */}
             <button
               type="button"
               aria-label={`Delete card ${data.archivalId}`}
@@ -318,7 +318,7 @@ function ArchivalCardNodeImpl({ id, data, selected }: NodeProps<MemexNode>) {
                 setIsExiting(true);
               }}
               onDoubleClick={(e) => e.stopPropagation()}
-              className="nodrag cursor-pointer text-[11px] leading-none text-text-muted opacity-0 transition-[opacity,color] duration-150 hover:text-[#ff6b6b] focus-visible:opacity-100 focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent-human group-hover:opacity-100"
+              className="cursor-pointer text-[11px] leading-none text-text-muted opacity-0 transition-[opacity,color] duration-150 hover:text-[#ff6b6b] focus-visible:opacity-100 focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent-human group-hover:opacity-100"
             >
               ✕
             </button>
