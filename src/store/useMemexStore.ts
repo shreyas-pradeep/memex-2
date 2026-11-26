@@ -24,6 +24,12 @@ import type {
   MemexNodeData,
   Trail,
 } from "@/core/types";
+import {
+  clampTrailIndex,
+  forgeCustomTrail,
+  getNextTrailIndex,
+  getPrevTrailIndex,
+} from "@/core/trail-engine";
 import { demoSeed } from "@/data/demo-seed";
 
 export const STORAGE_KEY = "memex-2:graph:v1";
@@ -162,7 +168,20 @@ function sameTags(a: string[], b: string[]): boolean {
   return a.length === b.length && a.every((t, i) => t === b[i]);
 }
 
+/** Playback state. Session-only: never persisted or exported. */
+const IDLE_PLAYBACK = {
+  activeTrailId: null,
+  activeTrailIndex: 0,
+  isPlayingAuto: false,
+} as const;
+
 export interface MemexStore extends MemexGraphState {
+  /** Trail currently in cinematic playback, or `null`. Not persisted. */
+  activeTrailId: string | null;
+  /** Zero-based stop within the active trail. */
+  activeTrailIndex: number;
+  isPlayingAuto: boolean;
+
   /** True once `hydrate()` has run on the client. */
   hydrated: boolean;
 
@@ -193,6 +212,16 @@ export interface MemexStore extends MemexGraphState {
   setGhostDiscoveries: (discoveries: GhostDiscovery[]) => void;
   autoLayout: () => void;
 
+  /** Starts playback of a trail at stop 0, or exits playback with `null`. */
+  setActiveTrail: (trailId: string | null) => void;
+  nextTrailStep: () => void;
+  prevTrailStep: () => void;
+  setTrailStep: (index: number) => void;
+  toggleAutoPlay: () => void;
+  exitTrailPlayback: () => void;
+  /** Creates a human trail from ordered card IDs and returns its ID (null when fewer than 2 valid cards). */
+  forgeTrail: (title: string, description: string, nodeIds: string[]) => string | null;
+
   /** Replaces the whole graph with the 1945 demo seed and persists it. */
   resetToSeed: () => void;
   exportJson: () => string;
@@ -212,16 +241,27 @@ export const useMemexStore = create<MemexStore>()((set, get) => {
     ) {
       return;
     }
-    set(next);
+    // Keep playback valid when the graph changes under it (e.g. a card in the
+    // active trail is deleted).
+    const trailId = current.activeTrailId;
+    if (trailId !== null) {
+      const trail = next.trails.find((t) => t.id === trailId);
+      const index = trail ? clampTrailIndex(current.activeTrailIndex, trail.nodeIds.length) : -1;
+      if (index === -1) set({ ...next, ...IDLE_PLAYBACK });
+      else set({ ...next, activeTrailIndex: index });
+    } else {
+      set(next);
+    }
     persistGraph(next);
   };
 
   return {
     ...freshSeed(),
+    ...IDLE_PLAYBACK,
     hydrated: false,
 
     hydrate: () => {
-      set({ ...(loadPersistedGraph() ?? freshSeed()), hydrated: true });
+      set({ ...(loadPersistedGraph() ?? freshSeed()), ...IDLE_PLAYBACK, hydrated: true });
     },
 
     onNodesChange: (changes) => {
@@ -312,9 +352,68 @@ export const useMemexStore = create<MemexStore>()((set, get) => {
       commit({ ...pick(get()), ghostDiscoveries }),
     autoLayout: () => commit(computeAutoLayout(pick(get()))),
 
+    setActiveTrail: (trailId) => {
+      if (trailId === null) return set({ ...IDLE_PLAYBACK });
+      const trail = get().trails.find((t) => t.id === trailId);
+      if (!trail || trail.nodeIds.length === 0) return set({ ...IDLE_PLAYBACK });
+      set({ activeTrailId: trailId, activeTrailIndex: 0, isPlayingAuto: false });
+    },
+
+    nextTrailStep: () => {
+      const { activeTrailId, activeTrailIndex, trails } = get();
+      const trail = trails.find((t) => t.id === activeTrailId);
+      if (!trail) return;
+      const next = getNextTrailIndex(activeTrailIndex, trail.nodeIds.length);
+      if (next === -1) return set({ ...IDLE_PLAYBACK });
+      // Auto-play stops once the last stop is reached.
+      set({ activeTrailIndex: next, isPlayingAuto: get().isPlayingAuto && next < trail.nodeIds.length - 1 });
+    },
+
+    prevTrailStep: () => {
+      const { activeTrailId, activeTrailIndex, trails } = get();
+      const trail = trails.find((t) => t.id === activeTrailId);
+      if (!trail) return;
+      const prev = getPrevTrailIndex(activeTrailIndex, trail.nodeIds.length);
+      if (prev === -1) return set({ ...IDLE_PLAYBACK });
+      set({ activeTrailIndex: prev });
+    },
+
+    setTrailStep: (index) => {
+      const { activeTrailId, trails } = get();
+      const trail = trails.find((t) => t.id === activeTrailId);
+      if (!trail) return;
+      const i = clampTrailIndex(index, trail.nodeIds.length);
+      if (i === -1) return set({ ...IDLE_PLAYBACK });
+      set({ activeTrailIndex: i });
+    },
+
+    toggleAutoPlay: () => {
+      const { activeTrailId, activeTrailIndex, isPlayingAuto, trails } = get();
+      const trail = trails.find((t) => t.id === activeTrailId);
+      if (!trail) return;
+      // Nothing to auto-play from the last stop.
+      if (!isPlayingAuto && activeTrailIndex >= trail.nodeIds.length - 1) return;
+      set({ isPlayingAuto: !isPlayingAuto });
+    },
+
+    exitTrailPlayback: () => set({ ...IDLE_PLAYBACK }),
+
+    forgeTrail: (title, description, nodeIds) => {
+      const state = get();
+      const known = new Set(state.nodes.map((n) => n.id));
+      const valid = nodeIds.filter((id) => known.has(id));
+      const trail = forgeCustomTrail(title, description, valid, "human", {
+        id: `t-${crypto.randomUUID().slice(0, 8)}`,
+        createdAt: new Date().toISOString(),
+      });
+      if (trail.nodeIds.length < 2) return null;
+      commit(createTrailPure(pick(state), trail));
+      return trail.id;
+    },
+
     resetToSeed: () => {
       const seed = freshSeed();
-      set(seed);
+      set({ ...seed, ...IDLE_PLAYBACK });
       persistGraph(seed);
     },
 
@@ -322,7 +421,7 @@ export const useMemexStore = create<MemexStore>()((set, get) => {
 
     importJson: (json) => {
       const graph = withDefaultSizes(deserializeGraph(json));
-      set(graph);
+      set({ ...graph, ...IDLE_PLAYBACK });
       persistGraph(graph);
     },
   };

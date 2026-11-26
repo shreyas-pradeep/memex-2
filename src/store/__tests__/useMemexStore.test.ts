@@ -202,3 +202,93 @@ describe("useMemexStore", () => {
     expect(useMemexStore.getState().hydrated).toBe(true);
   });
 });
+
+describe("useMemexStore trail playback", () => {
+  const HUMAN = "t-human-bush";
+  const GHOST = "t-ghost-machines";
+
+  beforeEach(() => {
+    installLocalStorage();
+    useMemexStore.getState().resetToSeed();
+  });
+
+  it("starts idle and begins playback at stop 0", () => {
+    expect(useMemexStore.getState().activeTrailId).toBeNull();
+    useMemexStore.getState().setActiveTrail(HUMAN);
+    const s = useMemexStore.getState();
+    expect(s.activeTrailId).toBe(HUMAN);
+    expect(s.activeTrailIndex).toBe(0);
+  });
+
+  it("ignores unknown trails and keeps the index in bounds", () => {
+    useMemexStore.getState().setActiveTrail("nope");
+    expect(useMemexStore.getState().activeTrailId).toBeNull();
+
+    useMemexStore.getState().setActiveTrail(HUMAN);
+    const n = useMemexStore.getState().trails.find((t) => t.id === HUMAN)!.nodeIds.length;
+    for (let i = 0; i < n + 3; i++) useMemexStore.getState().nextTrailStep();
+    expect(useMemexStore.getState().activeTrailIndex).toBe(n - 1);
+    for (let i = 0; i < n + 3; i++) useMemexStore.getState().prevTrailStep();
+    expect(useMemexStore.getState().activeTrailIndex).toBe(0);
+    useMemexStore.getState().setTrailStep(999);
+    expect(useMemexStore.getState().activeTrailIndex).toBe(n - 1);
+  });
+
+  it("auto-play stops at the last stop and cannot start from it", () => {
+    useMemexStore.getState().setActiveTrail(GHOST);
+    useMemexStore.getState().toggleAutoPlay();
+    expect(useMemexStore.getState().isPlayingAuto).toBe(true);
+    const n = useMemexStore.getState().trails.find((t) => t.id === GHOST)!.nodeIds.length;
+    for (let i = 0; i < n - 1; i++) useMemexStore.getState().nextTrailStep();
+    expect(useMemexStore.getState().isPlayingAuto).toBe(false);
+    useMemexStore.getState().toggleAutoPlay();
+    expect(useMemexStore.getState().isPlayingAuto).toBe(false);
+  });
+
+  it("exit resets playback state", () => {
+    useMemexStore.getState().setActiveTrail(HUMAN);
+    useMemexStore.getState().nextTrailStep();
+    useMemexStore.getState().toggleAutoPlay();
+    useMemexStore.getState().exitTrailPlayback();
+    const s = useMemexStore.getState();
+    expect([s.activeTrailId, s.activeTrailIndex, s.isPlayingAuto]).toEqual([null, 0, false]);
+  });
+
+  it("does not persist or export playback state", () => {
+    const data = installLocalStorage();
+    useMemexStore.getState().setActiveTrail(HUMAN);
+    useMemexStore.getState().removeNodes(["n-vemap"]);
+    const stored = data.get(STORAGE_KEY)!;
+    expect(stored).not.toContain("activeTrail");
+    expect(useMemexStore.getState().exportJson()).not.toContain("isPlayingAuto");
+  });
+
+  it("deleting a card removes it from trails and clamps playback", () => {
+    useMemexStore.getState().setActiveTrail(HUMAN);
+    useMemexStore.getState().setTrailStep(3);
+    const before = useMemexStore.getState().trails.find((t) => t.id === HUMAN)!.nodeIds;
+    const doomed = before[3];
+    useMemexStore.getState().removeNodes([doomed]);
+    const s = useMemexStore.getState();
+    expect(s.trails.find((t) => t.id === HUMAN)!.nodeIds).toEqual(
+      before.filter((id) => id !== doomed),
+    );
+    expect(s.activeTrailIndex).toBe(before.length - 2);
+  });
+
+  it("exits playback when the active trail is emptied", () => {
+    useMemexStore.getState().setActiveTrail(HUMAN);
+    const ids = useMemexStore.getState().trails.find((t) => t.id === HUMAN)!.nodeIds;
+    useMemexStore.getState().removeNodes(ids);
+    expect(useMemexStore.getState().activeTrailId).toBeNull();
+  });
+
+  it("forges a human trail from ordered cards", () => {
+    const id = useMemexStore.getState().forgeTrail("My Path", "", ["n-memex", "n-eniac", "n-memex"]);
+    expect(id).not.toBeNull();
+    const t = useMemexStore.getState().trails.find((x) => x.id === id)!;
+    expect(t.origin).toBe("human");
+    expect(t.nodeIds).toEqual(["n-memex", "n-eniac"]);
+    expect(useMemexStore.getState().forgeTrail("Solo", "", ["n-memex"])).toBeNull();
+  });
+});

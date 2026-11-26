@@ -17,6 +17,9 @@ import {
 import { nextArchivalId } from "@/core/graph-engine";
 import { EDGE_COLORS, type AssociativeEdge, type MemexNode } from "@/core/types";
 import { useMemexStore, type MemexStore } from "@/store/useMemexStore";
+import { TrailCameraDirector } from "../trails/TrailCameraDirector";
+import { TrailPlaybackDock } from "../trails/TrailPlaybackDock";
+import { TrailSelectorMenu } from "../trails/TrailSelectorMenu";
 import { AddCardModal, type NewCardInput } from "./AddCardModal";
 import { ArchivalCardNode } from "./ArchivalCardNode";
 import { AssociativePulseEdge } from "./AssociativePulseEdge";
@@ -195,6 +198,9 @@ const Flow = memo(function Flow() {
       />
       <Controls showInteractive={false} />
       <ArchivalHud />
+      <TrailSelectorMenu />
+      <TrailCameraDirector />
+      <TrailPlaybackDock />
     </ReactFlow>
   );
 });

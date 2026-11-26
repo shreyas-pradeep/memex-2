@@ -12,6 +12,7 @@ import {
 import { Handle, NodeResizer, Position, type NodeProps } from "@xyflow/react";
 import { motion, type Variants } from "framer-motion";
 import { EDGE_COLORS, type MemexNode } from "@/core/types";
+import { DIM_OPACITY, useNodeTrailState } from "@/store/trail-selectors";
 import { useMemexStore } from "@/store/useMemexStore";
 import { TagInput, withPendingTags } from "./TagInput";
 
@@ -182,6 +183,8 @@ function ArchivalCardNodeImpl({ id, data, selected }: NodeProps<MemexNode>) {
   const isArtifact = data.cardType === "artifact";
   const accent = isGhost ? EDGE_COLORS.ghost : EDGE_COLORS.human;
   const variants = cardVariants(accent, isGhost);
+  const trailState = useNodeTrailState(id);
+  const trailOpacity = trailState === "dim" ? DIM_OPACITY : 1;
 
   const [isEditing, setIsEditing] = useState(false);
   const [isExiting, setIsExiting] = useState(false);
@@ -260,6 +263,14 @@ function ArchivalCardNodeImpl({ id, data, selected }: NodeProps<MemexNode>) {
         handleStyle={{ "--resize-accent": accent } as CSSProperties}
         lineStyle={{ "--resize-accent": accent } as CSSProperties}
       />
+      <div
+        className="h-full w-full"
+        style={{
+          opacity: trailOpacity,
+          transition: "opacity 300ms ease",
+          pointerEvents: trailState === "dim" ? "none" : undefined,
+        }}
+      >
       <motion.div
         variants={variants}
         initial="rest"
@@ -287,6 +298,16 @@ function ArchivalCardNodeImpl({ id, data, selected }: NodeProps<MemexNode>) {
           } as CSSProperties
         }
       >
+        {/* Trail glow: a static box-shadow whose opacity fades (GPU, no filter). */}
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 rounded-2xl"
+          style={{
+            opacity: trailState === "current" ? 1 : trailState === "active" ? 0.55 : 0,
+            transition: "opacity 300ms ease",
+            boxShadow: `0 0 0 2px ${rgba(accent, 0.95)}, 0 0 34px 4px ${rgba(accent, 0.55)}`,
+          }}
+        />
         <Crosshair corner="tl" />
         <Crosshair corner="tr" />
         <Crosshair corner="bl" />
@@ -464,6 +485,7 @@ function ArchivalCardNodeImpl({ id, data, selected }: NodeProps<MemexNode>) {
         <Handle id="left" type="source" position={Position.Left} className="memex-handle" />
         <Handle id="right" type="source" position={Position.Right} className="memex-handle" />
       </motion.div>
+      </div>
     </>
   );
 }

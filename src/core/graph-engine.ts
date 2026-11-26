@@ -6,6 +6,7 @@ import type {
   MemexNode,
   Trail,
 } from "./types";
+import { removeNodeFromTrail } from "./trail-engine";
 
 /**
  * Pure graph operations for the Memex canvas. Every function returns a new
@@ -58,9 +59,7 @@ export function removeNodes(
     nodes: state.nodes.filter((n) => !doomed.has(n.id)),
     edges: state.edges.filter((e) => !doomed.has(e.source) && !doomed.has(e.target)),
     trails: state.trails.map((t) =>
-      t.nodeIds.some((id) => doomed.has(id))
-        ? { ...t, nodeIds: t.nodeIds.filter((id) => !doomed.has(id)) }
-        : t,
+      [...doomed].reduce<Trail>((acc, id) => removeNodeFromTrail(acc, id), t),
     ),
     ghostDiscoveries: state.ghostDiscoveries.filter(
       (g) => !doomed.has(g.sourceId) && !doomed.has(g.targetId),

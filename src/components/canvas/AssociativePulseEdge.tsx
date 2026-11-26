@@ -12,6 +12,7 @@ import {
 } from "@xyflow/react";
 import { AnimatePresence, motion } from "framer-motion";
 import { EDGE_COLORS, type AssociativeEdge } from "@/core/types";
+import { DIM_OPACITY, useEdgeTrailState } from "@/store/trail-selectors";
 
 const SPRING = { type: "spring", stiffness: 300, damping: 28 } as const;
 
@@ -74,6 +75,7 @@ function AssociativePulseEdgeImpl({
   selected,
 }: EdgeProps<AssociativeEdge>) {
   const [hovered, setHovered] = useState(false);
+  const trailState = useEdgeTrailState(source, target);
   const sourceNode = useInternalNode(source);
   const targetNode = useInternalNode(target);
 
@@ -109,13 +111,18 @@ function AssociativePulseEdgeImpl({
   const rationale = data?.rationale?.trim() ?? "";
   // Stronger associations pulse faster (4.2s down to 1.8s per traverse).
   const pulseSeconds = 4.2 - 2.4 * strength;
-  const active = hovered || selected === true;
+  const trailActive = trailState === "active";
+  const active = hovered || selected === true || trailActive;
 
   return (
     <g
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       data-edge-id={id}
+      style={{
+        opacity: trailState === "dim" ? DIM_OPACITY : 1,
+        transition: "opacity 300ms ease",
+      }}
     >
       {/* Glow: a wide translucent stroke under the crisp line. Plain strokes
           composite on the GPU, unlike an SVG blur filter. */}
@@ -123,8 +130,8 @@ function AssociativePulseEdgeImpl({
         d={path}
         fill="none"
         stroke={color}
-        strokeWidth={active ? 9 : 6}
-        strokeOpacity={active ? 0.22 : 0.1}
+        strokeWidth={trailActive ? 12 : active ? 9 : 6}
+        strokeOpacity={trailActive ? 0.4 : active ? 0.22 : 0.1}
         strokeLinecap="round"
         pointerEvents="none"
       />
@@ -165,7 +172,7 @@ function AssociativePulseEdgeImpl({
           }}
         >
           <AnimatePresence>
-            {active ? (
+            {hovered || selected === true ? (
               <motion.div
                 key="pill"
                 initial={{ opacity: 0, scale: 0.92 }}
