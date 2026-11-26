@@ -3,7 +3,6 @@
 import {
   memo,
   useCallback,
-  useEffect,
   useRef,
   useState,
   type CSSProperties,
@@ -20,6 +19,8 @@ const EXIT_TRANSITION = { duration: 0.22, ease: "easeIn" } as const;
 
 /** Dark-mode editor field background (same obsidian as the card surface). */
 const EDITOR_BG = "#141721";
+/** Minimum body height (px) so short notes never collapse. */
+const BODY_MIN_HEIGHT = 160;
 
 /** `"a, b ,, a"` to `["a", "b"]`: trimmed, non-empty, unique. */
 function parseTags(raw: string): string[] {
@@ -33,17 +34,19 @@ function rgba(hex: string, alpha: number): string {
 }
 
 /**
- * Both variants keep the same shadow structure (two layers) so framer-motion
- * can interpolate them. Only transform and box-shadow are animated.
+ * All variants keep the same shadow structure (two layers) so framer-motion
+ * can interpolate them. Only transform and box-shadow are animated. Ghost
+ * cards rest with a Phantom Violet rim glow; other cards rest dark.
  */
-function cardVariants(accent: string): Variants {
-  const rest = `0 0 0px 0px ${rgba(accent, 0)}, 0 4px 14px rgba(0, 0, 0, 0.55)`;
+function cardVariants(accent: string, isGhost: boolean): Variants {
+  const restGlow = isGhost ? `0 0 22px 1px ${rgba(accent, 0.3)}` : `0 0 0px 0px ${rgba(accent, 0)}`;
+  const rest = `${restGlow}, 0 4px 14px rgba(0, 0, 0, 0.55)`;
   return {
     rest: { scale: 1, y: 0, boxShadow: rest },
     hover: {
       scale: 1.025,
       y: -3,
-      boxShadow: `0 0 26px 1px ${rgba(accent, 0.32)}, 0 14px 30px rgba(0, 0, 0, 0.7)`,
+      boxShadow: `0 0 26px 1px ${rgba(accent, isGhost ? 0.5 : 0.32)}, 0 14px 30px rgba(0, 0, 0, 0.7)`,
     },
     selected: {
       scale: 1.01,
@@ -62,7 +65,8 @@ function cardVariants(accent: string): Variants {
 
 /** Minimum card size (px) enforced by the resizer. */
 const MIN_WIDTH = 280;
-const MIN_HEIGHT = 180;
+/** Header strip (about 41px) plus the 160px body minimum. */
+const MIN_HEIGHT = 204;
 
 /**
  * Microfilm registration crosshair (+). Sits just inside each corner of the
@@ -97,16 +101,91 @@ function Crosshair({ corner }: { corner: "tl" | "tr" | "bl" | "br" }) {
   );
 }
 
+/** FNV-1a hash: stable across server and client renders. */
+function hashString(value: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < value.length; i++) {
+    h ^= value.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+/** Deterministic patent number and sheet coordinates derived from the archival ID. */
+function patentMarks(archivalId: string): { patentNo: string; x: string; y: string } {
+  const h = hashString(archivalId);
+  return {
+    patentNo: (2_000_000 + (h % 700_000)).toLocaleString("en-US"),
+    x: (((h >>> 3) % 1000) / 10).toFixed(1).padStart(5, "0"),
+    y: (((h >>> 13) % 1000) / 10).toFixed(1).padStart(5, "0"),
+  };
+}
+
+const AMBER = EDGE_COLORS.human;
+const GRID_FINE = rgba(AMBER, 0.07);
+const GRID_MAJOR = rgba(AMBER, 0.18);
+
+/**
+ * 1945 technical drawing plate for artifact cards: microfiche gridlines
+ * (8px fine, 40px major), a line-drawn reel with a dimension rule, and patent
+ * coordinates derived from the archival ID.
+ */
+function BlueprintPlate({ archivalId }: { archivalId: string }) {
+  const { patentNo, x, y } = patentMarks(archivalId);
+  const stroke = rgba(AMBER, 0.75);
+  return (
+    <div
+      role="img"
+      aria-label={`Technical drawing, patent ${patentNo}`}
+      className="relative mb-3 h-14 shrink-0 overflow-hidden rounded-xl bg-[#090A0F]"
+      style={{
+        border: `1px solid ${rgba(AMBER, 0.22)}`,
+        backgroundImage: [
+          `linear-gradient(${GRID_MAJOR} 1px, transparent 1px)`,
+          `linear-gradient(90deg, ${GRID_MAJOR} 1px, transparent 1px)`,
+          `linear-gradient(${GRID_FINE} 1px, transparent 1px)`,
+          `linear-gradient(90deg, ${GRID_FINE} 1px, transparent 1px)`,
+        ].join(", "),
+        backgroundSize: "40px 40px, 40px 40px, 8px 8px, 8px 8px",
+      }}
+    >
+      <svg
+        aria-hidden="true"
+        viewBox="0 0 160 56"
+        preserveAspectRatio="xMinYMid meet"
+        className="absolute inset-0 h-full w-[160px]"
+        fill="none"
+        stroke={stroke}
+        strokeWidth="1"
+      >
+        <circle cx="30" cy="28" r="19" />
+        <circle cx="30" cy="28" r="6" />
+        <path d="M30 9V47M11 28H49M16.6 14.6L43.4 41.4M43.4 14.6L16.6 41.4" strokeOpacity="0.45" />
+        <path d="M58 28H92M58 24V32M92 24V32" />
+        <path d="M92 28C104 28 108 14 122 14M92 28C104 28 108 42 122 42" strokeOpacity="0.6" />
+        <circle cx="128" cy="14" r="5" />
+        <circle cx="128" cy="42" r="5" />
+      </svg>
+      <div className="absolute top-1 right-2 text-right font-mono text-[9px] leading-tight tracking-wider text-text-muted">
+        <div>FIG. 1 · SHEET 1/1</div>
+        <div>PAT. NO. {patentNo}</div>
+        <div>
+          X {x} · Y {y}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ArchivalCardNodeImpl({ id, data, selected }: NodeProps<MemexNode>) {
   const isGhost = data.cardType === "ghost";
+  const isQuote = data.cardType === "quote";
+  const isArtifact = data.cardType === "artifact";
   const accent = isGhost ? EDGE_COLORS.ghost : EDGE_COLORS.human;
-  const variants = cardVariants(accent);
+  const variants = cardVariants(accent, isGhost);
 
   const [isEditing, setIsEditing] = useState(false);
   const [isExiting, setIsExiting] = useState(false);
-  const [scrollable, setScrollable] = useState(false);
-  const bodyRef = useRef<HTMLDivElement>(null);
-  const bodyInnerRef = useRef<HTMLDivElement>(null);
   const [draft, setDraft] = useState({ title: "", content: "", tags: "" });
   // Guards against committing twice (Escape followed by the blur it causes).
   const editingRef = useRef(false);
@@ -134,20 +213,6 @@ function ArchivalCardNodeImpl({ id, data, selected }: NodeProps<MemexNode>) {
     setIsEditing(false);
   }, [id, draft]);
 
-  // Text that overflows the card scrolls inside the body. While it does, the
-  // body is `nodrag nowheel` so scrolling never zooms and selecting never
-  // drags the canvas. Short text keeps the whole card draggable.
-  useEffect(() => {
-    const outer = bodyRef.current;
-    const inner = bodyInnerRef.current;
-    if (!outer || !inner) return;
-    const measure = () => setScrollable(outer.scrollHeight > outer.clientHeight + 1);
-    const observer = new ResizeObserver(measure);
-    observer.observe(outer);
-    observer.observe(inner);
-    return () => observer.disconnect();
-  }, [isEditing]);
-
   const onEditorBlur = (e: FocusEvent<HTMLDivElement>) => {
     // Moving focus between the editor's own fields is not a commit.
     if (!e.currentTarget.contains(e.relatedTarget as Node | null)) commitEdit();
@@ -166,6 +231,16 @@ function ArchivalCardNodeImpl({ id, data, selected }: NodeProps<MemexNode>) {
     background: EDITOR_BG,
     border: `1px solid ${rgba(accent, 0.45)}`,
     outline: "none",
+  };
+
+  // The ghost body gets a faint phosphor bloom behind the text.
+  const bodyStyle: CSSProperties = {
+    minHeight: BODY_MIN_HEIGHT,
+    ...(isGhost
+      ? {
+          backgroundImage: `radial-gradient(ellipse at 50% 0%, ${rgba(accent, 0.12)}, transparent 70%)`,
+        }
+      : {}),
   };
 
   return (
@@ -209,20 +284,31 @@ function ArchivalCardNodeImpl({ id, data, selected }: NodeProps<MemexNode>) {
         <Crosshair corner="bl" />
         <Crosshair corner="br" />
 
-        <header
-          className="flex shrink-0 items-center justify-between px-5 pt-3.5 pb-2 font-mono text-[10px] uppercase tracking-[0.14em]"
-          style={{ borderBottom: `1px solid ${rgba(accent, 0.22)}` }}
-        >
-          <span className="text-text-muted">{data.archivalId}</span>
-          <div className="flex items-center gap-2">
+        {/* Microfiche strip. The whole card drags; the header is the grab surface. */}
+        <header className="flex shrink-0 cursor-grab items-center gap-2 rounded-t-2xl border-b border-white/5 bg-[#161922] px-4 py-2.5 active:cursor-grabbing">
+          <svg
+            aria-hidden="true"
+            viewBox="0 0 6 10"
+            className="h-2.5 w-1.5 shrink-0 text-text-muted"
+            fill="currentColor"
+          >
+            <circle cx="1" cy="1" r="0.9" />
+            <circle cx="5" cy="1" r="0.9" />
+            <circle cx="1" cy="5" r="0.9" />
+            <circle cx="5" cy="5" r="0.9" />
+            <circle cx="1" cy="9" r="0.9" />
+            <circle cx="5" cy="9" r="0.9" />
+          </svg>
+          <span className="font-mono text-xs text-[#8E94A5]">{data.archivalId}</span>
+          <div className="ml-auto flex items-center gap-2">
             <span
-              className="rounded-full px-2 py-px"
+              className="rounded-full px-2 py-px font-mono text-[10px] uppercase tracking-[0.14em]"
               style={{ color: accent, border: `1px solid ${rgba(accent, 0.4)}` }}
             >
-              {isGhost && data.confidence !== undefined
-                ? `GHOST ${data.confidence.toFixed(2)}`
-                : data.cardType}
+              {data.cardType}
             </span>
+            {/* `nodrag` stays on this button: React Flow's drag listener is native,
+                so React's stopPropagation cannot keep a press here from starting a drag. */}
             <button
               type="button"
               aria-label={`Delete card ${data.archivalId}`}
@@ -239,22 +325,10 @@ function ArchivalCardNodeImpl({ id, data, selected }: NodeProps<MemexNode>) {
           </div>
         </header>
 
-        {data.imageUrl ? (
-          <div className="mx-5 mt-3 h-24 shrink-0 overflow-hidden rounded-xl border border-card-border bg-canvas-bg">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={data.imageUrl}
-              alt={data.title}
-              draggable={false}
-              className="h-full w-full object-cover"
-              style={{ filter: "url(#microfilm-duotone)" }}
-            />
-          </div>
-        ) : null}
-
         {isEditing ? (
           <div
-            className="nodrag nowheel nopan flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-5 pt-3 pb-4"
+            className="flex flex-1 flex-col gap-2 overflow-y-auto rounded-b-2xl bg-[#11131C] p-5"
+            style={{ minHeight: BODY_MIN_HEIGHT }}
             onBlur={onEditorBlur}
             onKeyDown={onEditorKeyDown}
           >
@@ -285,39 +359,89 @@ function ArchivalCardNodeImpl({ id, data, selected }: NodeProps<MemexNode>) {
           </div>
         ) : (
           <div
-            ref={bodyRef}
-            className={`min-h-0 flex-1 overflow-y-auto px-5 pt-3 pb-4${scrollable ? " nodrag nowheel" : ""}`}
+            className="relative flex-1 overflow-y-auto rounded-b-2xl bg-[#11131C] p-5"
+            style={bodyStyle}
           >
-            <div ref={bodyInnerRef}>
-              <h3 className="font-serif text-[17px] font-semibold leading-snug tracking-tight text-text-primary">
-                {data.title}
-              </h3>
-              {data.content ? (
-                <p className="mt-1.5 text-[12px] leading-relaxed text-text-muted">
-                  {data.content}
-                </p>
-              ) : null}
-              {data.tags.length > 0 ? (
-                <ul className="mt-3 flex flex-wrap gap-1.5">
-                  {data.tags.map((tag) => (
-                    <li
-                      key={tag}
-                      className="rounded-full px-2 py-px font-mono text-[10px] uppercase tracking-wider"
-                      style={{
-                        color: accent,
-                        border: `1px solid ${rgba(accent, 0.4)}`,
-                      }}
-                    >
-                      {tag}
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
-            </div>
+            {isQuote ? (
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute top-1 right-4 select-none font-serif text-[88px] leading-none"
+                style={{ color: AMBER, opacity: 0.1 }}
+              >
+                {"\u201C"}
+              </span>
+            ) : null}
+
+            {isGhost ? (
+              <div
+                className="mb-3 inline-flex items-center gap-1.5 rounded-full px-2 py-px font-mono text-[10px] uppercase tracking-[0.14em]"
+                style={{
+                  color: accent,
+                  background: rgba(accent, 0.08),
+                  border: `1px solid ${rgba(accent, 0.35)}`,
+                  textShadow: `0 0 8px ${rgba(accent, 0.7)}`,
+                }}
+              >
+                <span
+                  aria-hidden="true"
+                  className="memex-phosphor-dot h-1.5 w-1.5 rounded-full"
+                  style={{ background: accent, boxShadow: `0 0 6px 1px ${rgba(accent, 0.8)}` }}
+                />
+                {data.confidence !== undefined
+                  ? `Phosphor · ${data.confidence.toFixed(2)}`
+                  : "Phosphor · Live"}
+              </div>
+            ) : null}
+
+            {isArtifact ? <BlueprintPlate archivalId={data.archivalId} /> : null}
+
+            {!isArtifact && data.imageUrl ? (
+              <div className="mb-3 h-24 overflow-hidden rounded-xl border border-card-border bg-canvas-bg">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={data.imageUrl}
+                  alt={data.title}
+                  draggable={false}
+                  className="h-full w-full object-cover"
+                  style={{ filter: "url(#microfilm-duotone)" }}
+                />
+              </div>
+            ) : null}
+
+            <h3 className="relative font-serif text-[17px] font-semibold leading-snug tracking-tight text-text-primary">
+              {data.title}
+            </h3>
+            {data.content ? (
+              <p
+                className={
+                  isQuote
+                    ? "relative mt-2 font-serif text-[14px] italic leading-relaxed text-text-primary/90"
+                    : "relative mt-1.5 text-[12px] leading-relaxed text-text-muted"
+                }
+              >
+                {data.content}
+              </p>
+            ) : null}
+            {data.tags.length > 0 ? (
+              <ul className="relative mt-3 flex flex-wrap gap-1.5">
+                {data.tags.map((tag) => (
+                  <li
+                    key={tag}
+                    className="rounded-full px-2 py-px font-mono text-[10px] uppercase tracking-wider"
+                    style={{
+                      color: accent,
+                      border: `1px solid ${rgba(accent, 0.4)}`,
+                    }}
+                  >
+                    {tag}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
           </div>
         )}
 
-        {/* One connector per side; ConnectionMode.Loose lets any pad link to any pad. */}
+        {/* One pill connector per side; ConnectionMode.Loose lets any pill link to any pill. */}
         <Handle id="top" type="source" position={Position.Top} className="memex-handle" />
         <Handle id="bottom" type="source" position={Position.Bottom} className="memex-handle" />
         <Handle id="left" type="source" position={Position.Left} className="memex-handle" />

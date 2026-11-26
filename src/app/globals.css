@@ -75,28 +75,69 @@ body {
   border-radius: 0;
 }
 
-/* Connection handles: tiny square registration pads. */
+/* Connection handles: slim pills centred on the card border. They rest dim and
+   expand (transform only) with an accent glow while the card is hovered. */
 .react-flow .memex-handle {
-  width: 8px;
-  height: 8px;
   min-width: 0;
   min-height: 0;
-  border-radius: 1px;
-  background: var(--canvas-bg);
+  border-radius: 9999px;
+  background: var(--card-surface);
   border: 1px solid var(--handle-accent, var(--accent-human));
-  opacity: 0.45;
+  opacity: 0.35;
   transition:
     opacity 150ms ease,
-    background-color 150ms ease;
+    background-color 150ms ease,
+    box-shadow 150ms ease,
+    transform 150ms ease;
+}
+.react-flow .memex-handle.react-flow__handle-top,
+.react-flow .memex-handle.react-flow__handle-bottom {
+  width: 24px;
+  height: 6px;
+}
+.react-flow .memex-handle.react-flow__handle-left,
+.react-flow .memex-handle.react-flow__handle-right {
+  width: 6px;
+  height: 24px;
+}
+.react-flow__node:hover .memex-handle {
+  opacity: 0.95;
+  box-shadow: 0 0 10px 2px
+    color-mix(in srgb, var(--handle-accent, var(--accent-human)) 55%, transparent);
+}
+.react-flow__node:hover .memex-handle.react-flow__handle-top {
+  transform: translate(-50%, -50%) scale(1.5, 1.5);
+}
+.react-flow__node:hover .memex-handle.react-flow__handle-bottom {
+  transform: translate(-50%, 50%) scale(1.5, 1.5);
+}
+.react-flow__node:hover .memex-handle.react-flow__handle-left {
+  transform: translate(-50%, -50%) scale(1.5, 1.5);
+}
+.react-flow__node:hover .memex-handle.react-flow__handle-right {
+  transform: translate(50%, -50%) scale(1.5, 1.5);
 }
 .react-flow .memex-handle:hover,
 .react-flow .memex-handle.connectingfrom,
 .react-flow .memex-handle.connectingto {
   opacity: 1;
   background: var(--handle-accent, var(--accent-human));
+  box-shadow: 0 0 14px 3px
+    color-mix(in srgb, var(--handle-accent, var(--accent-human)) 70%, transparent);
 }
-.react-flow__node:hover .memex-handle {
-  opacity: 0.9;
+
+/* Ghost cards: slow phosphor flicker on the status dot. */
+@keyframes memex-phosphor {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+.memex-phosphor-dot {
+  animation: memex-phosphor 2.4s ease-in-out infinite;
 }
 
 /* Card resize controls: circular pill handles with a soft accent glow.
@@ -145,7 +186,8 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .memex-edge-pulse {
+  .memex-edge-pulse,
+  .memex-phosphor-dot {
     animation: none;
   }
 }

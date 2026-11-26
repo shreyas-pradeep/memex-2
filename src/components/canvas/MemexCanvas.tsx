@@ -75,44 +75,47 @@ function ArchivalHud() {
     requestAnimationFrame(() => void fitView(FIT_OPTIONS));
   }, [fitView]);
 
-  const buttonClass =
-    "cursor-pointer border border-card-border bg-canvas-bg px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.12em] text-text-primary transition-colors hover:border-accent-human hover:text-accent-human focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent-human";
+  const buttonBase =
+    "cursor-pointer rounded-xl border px-3 py-2 font-mono text-[11px] font-semibold uppercase tracking-[0.16em] shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_2px_0_rgba(0,0,0,0.65),0_6px_14px_rgba(0,0,0,0.4)] transition-[color,border-color,box-shadow,transform] duration-100 active:translate-y-[2px] active:shadow-[inset_0_2px_6px_rgba(0,0,0,0.7)] focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2";
+  const addButtonClass = `${buttonBase} border-accent-human/50 bg-gradient-to-b from-[#161922] to-[#141721] text-accent-human hover:border-accent-human hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.1),0_2px_0_rgba(0,0,0,0.65),0_0_16px_rgba(255,178,54,0.3)] focus-visible:outline-accent-human`;
+  const resetButtonClass = `${buttonBase} border-white/10 bg-gradient-to-b from-[#161922] to-[#090A0F] text-text-muted hover:border-accent-ghost/60 hover:text-accent-ghost hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_2px_0_rgba(0,0,0,0.65),0_0_16px_rgba(179,136,255,0.3)] focus-visible:outline-accent-ghost`;
+
+  const readoutStyle = { textShadow: "0 0 10px rgba(255, 178, 54, 0.65)" } as const;
+  const nodesLabel = String(nodeCount).padStart(3, "0");
+  const edgesLabel = String(edgeCount).padStart(3, "0");
 
   return (
     <Panel position="top-left" className="!m-4">
-      <div
-        className="w-[250px] bg-card-surface/95 p-3 backdrop-blur-sm"
-        style={{ border: "1px solid rgba(255, 178, 54, 0.3)", borderRadius: 2 }}
-      >
-        <div className="font-mono text-[10px] uppercase tracking-[0.2em] text-text-muted">
+      <div className="w-[260px] rounded-2xl border border-white/10 bg-[#141721]/70 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.07),0_12px_36px_rgba(0,0,0,0.55)] backdrop-blur-xl">
+        <div className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.2em] text-text-muted">
+          <span
+            aria-hidden="true"
+            className="h-1.5 w-1.5 rounded-full bg-accent-human"
+            style={{ boxShadow: "0 0 8px 2px rgba(255, 178, 54, 0.6)" }}
+          />
           Memex 2.0 · Archival Desk
         </div>
         <div className="mt-1 font-serif text-lg font-semibold text-text-primary">
           Microfilm Index
         </div>
 
-        <div className="mt-3 flex flex-col gap-2">
-          <button type="button" className={buttonClass} onClick={addNote}>
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <button type="button" className={addButtonClass} onClick={addNote}>
             + Add Note
           </button>
-          <button type="button" className={buttonClass} onClick={resetToSeed}>
-            Reset to 1945 Seed
+          <button type="button" className={resetButtonClass} onClick={resetToSeed}>
+            Reset Seed
           </button>
         </div>
 
-        <dl
-          className="mt-3 flex gap-5 pt-2.5 font-mono text-[11px] uppercase tracking-wider"
-          style={{ borderTop: "1px solid rgba(255, 178, 54, 0.18)" }}
+        <div
+          role="status"
+          aria-label={`${nodeCount} nodes, ${edgeCount} edges`}
+          className="mt-3 rounded-xl border border-white/5 bg-[#090A0F]/80 px-3 py-2 text-center font-mono text-[13px] font-semibold uppercase tracking-[0.14em] text-accent-human shadow-[inset_0_2px_6px_rgba(0,0,0,0.6)]"
+          style={readoutStyle}
         >
-          <div>
-            <dt className="text-text-muted">Nodes</dt>
-            <dd className="text-accent-human">{String(nodeCount).padStart(3, "0")}</dd>
-          </div>
-          <div>
-            <dt className="text-text-muted">Edges</dt>
-            <dd className="text-accent-ghost">{String(edgeCount).padStart(3, "0")}</dd>
-          </div>
-        </dl>
+          {nodesLabel} Nodes // {edgesLabel} Edges
+        </div>
       </div>
     </Panel>
   );
@@ -141,7 +144,7 @@ function Flow() {
       minZoom={0.15}
       maxZoom={2.5}
       deleteKeyCode={["Backspace", "Delete"]}
-      proOptions={{ hideAttribution: false }}
+      proOptions={{ hideAttribution: true }}
       style={{ background: "#090A0F" }}
     >
       {/* Dot matrix: fine 20px grid plus brighter registration dots every 100px. */}
