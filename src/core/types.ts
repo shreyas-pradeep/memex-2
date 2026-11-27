@@ -95,6 +95,13 @@ export interface Trail {
   nodeIds: string[];
   /** ISO-8601 timestamp. */
   createdAt: string;
+  /**
+   * Optional accent color as `#RRGGBB`, set only on manual trails created with a
+   * color (Spec 08). Absent everywhere else (auto trails, seed trails, old
+   * saves); the accent then derives from `origin` via `EDGE_COLORS`. Read it
+   * through `normalizeTrailColor`: an invalid stored value is ignored.
+   */
+  color?: string;
 }
 
 /** A pre-computed Ghost AI suggestion connecting two cards. */

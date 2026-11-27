@@ -1,0 +1,27 @@
+# Implementation Plan: 08-curators-index
+
+- [x] 1. Author the spec
+  - Create `requirements.md`, `design.md` and `tasks.md` in `.kiro/specs/08-curators-index/`.
+  - _Requirements: 1.1 to 11.5_
+- [x] 2. Data model and pure graph change
+  - Add optional `Trail.color` to `src/core/types.ts`; add `normalizeTrailColor` and the `meta.color` option of `forgeCustomTrail` to `src/core/trail-engine.ts`; add the pure `removeTrail` to `src/core/graph-engine.ts`.
+  - _Requirements: 5.4, 5.5, 6.3_
+- [x] 3. Pure Curator's Index logic
+  - Create `src/core/curators-index.ts`: `buildTrailCardModel(s)` (archetype, era, summary, breadcrumbs, overflow, accent), `buildManualTrail`, `loadTrailState`, `dedupeKeepOrder`, `sanitizeCardIds`, `uniqueTrailId`, `orderSelectedCardIds`, `blazeFormState`, `weaveQuickAction`, `curatorDrawerReducer`, `isCuratorHotkey`, `isCuratorEscape`, `resolveEscapeOwner`, `shouldDockHandleKeys`.
+  - _Requirements: 2.2 to 2.6, 3.1, 3.2, 5.2 to 5.5, 7.2, 9.1 to 9.5_
+- [x] 4. Store
+  - Add `isCuratorDrawerOpen`, `trailCameraNonce`, `toggleCuratorDrawer`, `setCuratorDrawerOpen`, `createManualTrail`, `deleteTrail`, `loadTrailIntoLever` to `src/store/useMemexStore.ts`; make `forgeTrail` delegate to `createManualTrail`. Create `src/store/curator-selectors.ts` (primitive signature selectors) and `src/store/useBriefingSession.ts` (shared briefing dialog state).
+  - _Requirements: 1.6, 3.1 to 3.3, 4.2, 4.3, 5.4, 5.8, 6.3 to 6.5, 11.1, 11.2_
+- [x] 5. Drawer, trigger and shared briefing dialog
+  - Create `src/components/trails/CuratorsIndexDrawer.tsx` (header, auto-weave action, trail cards with breadcrumbs, load, briefing, two-step delete, blaze form, empty state, spring slide with reduced-motion fade, focus handling, narrow-screen exclusion with the Synapse Inspector), `CuratorsIndexTrigger.tsx`, `key-context.ts` and `src/components/canvas/BriefingHost.tsx`.
+  - Update `TrailPlaybackDock.tsx` (shared briefing, `shouldDockHandleKeys`) and `TrailCameraDirector.tsx` (camera nonce).
+  - _Requirements: 1.1 to 1.5, 1.7, 2.1 to 2.9, 3.3, 3.4, 4.1, 4.2, 5.1 to 5.7, 6.1, 6.2, 7.1, 7.2, 9.4, 9.6, 10.1 to 10.5_
+- [x] 6. Replace the legacy dropdown
+  - Delete `src/components/trails/TrailSelectorMenu.tsx`; mount the trigger, drawer and `BriefingHost` in `MemexCanvas.tsx`; update the guidance copy in `src/core/sprocket-engine.ts`, the weave-cancelled text in `src/core/sprocket-motion.ts`, the assertion in `sprocket.property.test.ts` and the Spec 02, 06 and 07 documents.
+  - _Requirements: 8.1 to 8.3_
+- [x] 7. Property-based and unit tests
+  - Create `src/core/__tests__/curators-index.property.test.ts` (Properties 1 to 3 and the unit tests for the view-model, archetypes, precedence, selection order, `removeTrail`, color round trip) and `src/store/__tests__/curators-index.test.ts` (store actions, session-only state, selectors, briefing session); 200 runs per property.
+  - _Requirements: 2.2 to 2.6, 3.1, 3.2, 5.4, 5.5, 6.3 to 6.5, 9.1 to 9.5, 11.1, 11.2_
+- [x] 8. Verify and commit
+  - Run `npx tsc --noEmit`, `npx vitest run`, `npx eslint src` and `npm run build`; commit `feat(spec-08): implement curator's index drawer replacing trail dropdown`.
+  - _Requirements: all_

@@ -11,7 +11,7 @@ import { useMemexStore } from "./useMemexStore";
  * `requestWeave()`. `SprocketCrawler` subscribes to `weaveRequestId` outside
  * React and runs the show; no component needs a ref to another.
  */
-interface SprocketSession {
+export interface SprocketSession {
   isWeaving: boolean;
   weavingTrailId: string | null;
   /** Bumped by every accepted request; the crawler reacts to the change. */
@@ -58,3 +58,4 @@ export const useSprocketSession = create<SprocketSession>()((set, get) => ({
 export const selectIsWeaving = (s: SprocketSession) => s.isWeaving;
 export const selectWeaveRequestId = (s: SprocketSession) => s.weaveRequestId;
 export const selectRequestWeave = (s: SprocketSession) => s.requestWeave;
+export const selectWeavingTrailId = (s: SprocketSession) => s.weavingTrailId;

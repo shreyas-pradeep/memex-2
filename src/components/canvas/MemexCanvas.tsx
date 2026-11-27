@@ -35,10 +35,12 @@ import { WEAVE_BUTTON_LABEL, WEAVE_MIN_CARDS, canStartWeave } from "@/core/sproc
 import { AISettingsModal } from "../ghost/AISettingsModal";
 import { SynapseInspectorDrawer } from "../ghost/SynapseInspectorDrawer";
 import { ArchivalTimeline } from "../trails/ArchivalTimeline";
+import { CuratorsIndexDrawer } from "../trails/CuratorsIndexDrawer";
+import { CuratorsIndexTrigger } from "../trails/CuratorsIndexTrigger";
 import { TrailCameraDirector } from "../trails/TrailCameraDirector";
 import { TrailPlaybackDock } from "../trails/TrailPlaybackDock";
-import { TrailSelectorMenu } from "../trails/TrailSelectorMenu";
 import { AddCardModal, type NewCardInput } from "./AddCardModal";
+import { BriefingHost } from "./BriefingHost";
 import { ArchivalCardNode } from "./ArchivalCardNode";
 import { IngestionPlatenModal } from "./IngestionPlatenModal";
 import { AssociativePulseEdge } from "./AssociativePulseEdge";
@@ -380,7 +382,7 @@ const Flow = memo(function Flow() {
       />
       <Controls showInteractive={false} />
       <ArchivalHud />
-      <TrailSelectorMenu />
+      <CuratorsIndexTrigger />
       <TrailCameraDirector />
       <TrailPlaybackDock />
       <ArchivalTimeline />
@@ -411,6 +413,8 @@ export function MemexCanvas() {
         </ReactFlowProvider>
       ) : null}
       {hydrated ? <SynapseInspectorDrawer /> : null}
+      {hydrated ? <CuratorsIndexDrawer /> : null}
+      <BriefingHost />
       <RetroToaster />
     </div>
   );

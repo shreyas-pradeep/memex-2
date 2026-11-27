@@ -501,7 +501,8 @@ export interface GuidanceMessage {
  * Hint text per state. Bracketed names match the real controls: `[I]` opens the
  * platen, `[▶]` and `[❚❚ Auto-Play]` are the dock's auto-play button, `[Next]` is
  * "Next ▶", `[⚡ WAKE GHOST ENGINE]` is the HUD's "⚡ Wake Ghost Engine" button (set in
- * capitals by its CSS), `[+ Forge Trail]` is the trail menu's button.
+ * capitals by its CSS), `[📜 TRAILS & REELS]` (or `[T]`) opens the Curator's Index and
+ * `[+ BLAZE NEW TRAIL]` is its form button.
  */
 export const GUIDANCE_TEXT: Readonly<Record<GuidanceStateId, string>> = {
   "empty-canvas": "The microfilm reels are blank. Press [I] to scan a document onto the platen.",
@@ -514,9 +515,9 @@ export const GUIDANCE_TEXT: Readonly<Record<GuidanceStateId, string>> = {
   "idle-whisper":
     "The archives whisper... tap [⚡ WAKE GHOST ENGINE] to reveal hidden latent connections.",
   "no-trails":
-    "No trails charted yet. Select two or more cards, then press [+ Forge Trail] at the top.",
+    "No trails charted yet. Select two or more cards, then open [📜 TRAILS & REELS] or press [T] and choose [+ BLAZE NEW TRAIL].",
   "cards-no-trail":
-    "Select an associative trail from the Trails menu at the top to pull up the 1945 Lever.",
+    "Open [📜 TRAILS & REELS] or press [T] to pick an associative trail and pull up the 1945 Lever.",
 };
 
 /** Every guidance text names a control in brackets or starts an action with one of these verbs. */

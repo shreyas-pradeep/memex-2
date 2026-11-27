@@ -155,6 +155,28 @@ export function createTrail(state: MemexGraphState, trail: Trail): MemexGraphSta
   return { ...state, trails: [...state.trails, { ...trail, nodeIds }] };
 }
 
+/**
+ * Removes a trail. Discoveries that were converted into it lose their `trailId`
+ * so no reference dangles; cards, edges and every other trail are untouched
+ * (edge `data.trailId` is a seed annotation that nothing reads). An unknown id
+ * returns the same state.
+ */
+export function removeTrail(state: MemexGraphState, trailId: string): MemexGraphState {
+  if (!state.trails.some((t) => t.id === trailId)) return state;
+  const referenced = state.ghostDiscoveries.some((g) => g.trailId === trailId);
+  return {
+    ...state,
+    trails: state.trails.filter((t) => t.id !== trailId),
+    ghostDiscoveries: referenced
+      ? state.ghostDiscoveries.map((g) => {
+          if (g.trailId !== trailId) return g;
+          const { trailId: removed, ...rest } = g;
+          void removed;
+          return rest;
+        })
+      : state.ghostDiscoveries,
+  };
+}
 export function serializeGraph(state: MemexGraphState): string {
   return JSON.stringify({
     nodes: state.nodes,

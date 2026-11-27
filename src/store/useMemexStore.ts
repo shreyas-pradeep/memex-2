@@ -15,6 +15,7 @@ import {
   nextArchivalId,
   removeDiscovery,
   removeNodes as removeNodesPure,
+  removeTrail as removeTrailPure,
   serializeGraph,
   toggleEdgePolarity as toggleEdgePolarityPure,
 } from "@/core/graph-engine";
@@ -32,10 +33,14 @@ import type {
 } from "@/core/types";
 import {
   clampTrailIndex,
-  forgeCustomTrail,
   getNextTrailIndex,
   getPrevTrailIndex,
 } from "@/core/trail-engine";
+import {
+  buildManualTrail,
+  curatorDrawerReducer,
+  loadTrailState,
+} from "@/core/curators-index";
 import {
   DEFAULT_GHOST_THRESHOLD,
   detectGhostSynapses,
@@ -354,6 +359,20 @@ export interface MemexStore extends MemexGraphState {
   setTimelineOpen: (open: boolean) => void;
   highlightNode: (id: string) => void;
 
+  /**
+   * Session-only: the Curator's Index drawer (Spec 08). Never persisted,
+   * exported or read back; `hydrate`, `resetToSeed` and `importJson` leave it
+   * as it is (it is interface state, like `isTimelineOpen`), and it starts closed.
+   */
+  isCuratorDrawerOpen: boolean;
+  /**
+   * Session-only: bumped by `loadTrailIntoLever` so the camera director glides
+   * to stop 1 even when that trail is already active at stop 1.
+   */
+  trailCameraNonce: number;
+  toggleCuratorDrawer: () => void;
+  setCuratorDrawerOpen: (open: boolean) => void;
+
   /** True once `hydrate()` has run on the client. */
   hydrated: boolean;
 
@@ -407,6 +426,32 @@ export interface MemexStore extends MemexGraphState {
   exitTrailPlayback: () => void;
   /** Creates a human trail from ordered card IDs and returns its ID (null when fewer than 2 valid cards). */
   forgeTrail: (title: string, description: string, nodeIds: string[]) => string | null;
+  /**
+   * Blazes a manual trail (Spec 08), built on `forgeCustomTrail`. The order of
+   * `cardIds` is kept; repeats (first occurrence wins) and unknown ids are
+   * dropped; fewer than 2 valid cards returns `null` and changes nothing. The
+   * id is unique among existing trails, the origin is `human`, the name is
+   * trimmed (empty becomes "Untitled Trail"), and an optional `#RRGGBB` color
+   * is kept when valid. Persists once and returns the new trail id.
+   */
+  createManualTrail: (
+    name: string,
+    description: string,
+    cardIds: readonly string[],
+    color?: string,
+  ) => string | null;
+  /**
+   * Removes a trail and persists once. Unknown ids are a no-op. Deleting the
+   * trail that is playing ends playback (the same reset as `exitTrailPlayback`).
+   * Auto trails can be generated again afterwards.
+   */
+  deleteTrail: (trailId: string) => void;
+  /**
+   * Loads a trail into the 1945 Lever: it becomes the active trail at stop 0
+   * with auto-play off, the Curator's Index closes and the camera glides to
+   * stop 1. Unknown or empty trails are a no-op.
+   */
+  loadTrailIntoLever: (trailId: string) => void;
   /**
    * Generates the auto trails the live graph supports (Lineage Arc, Dialectical
    * Debate, Dense Conceptual Nexus) and stores those that are new: a trail whose
@@ -462,6 +507,15 @@ export const useMemexStore = create<MemexStore>()((set, get) => {
     hydrated: false,
     isTimelineOpen: true,
     highlightedNodeId: null,
+    isCuratorDrawerOpen: false,
+    trailCameraNonce: 0,
+
+    toggleCuratorDrawer: () =>
+      set({ isCuratorDrawerOpen: curatorDrawerReducer(get().isCuratorDrawerOpen, { type: "toggle" }) }),
+    setCuratorDrawerOpen: (open) => {
+      const next = curatorDrawerReducer(get().isCuratorDrawerOpen, { type: open ? "open" : "close" });
+      if (next !== get().isCuratorDrawerOpen) set({ isCuratorDrawerOpen: next });
+    },
 
     toggleTimeline: () => set({ isTimelineOpen: !get().isTimelineOpen }),
     setTimelineOpen: (open) => set({ isTimelineOpen: open }),
@@ -765,17 +819,42 @@ export const useMemexStore = create<MemexStore>()((set, get) => {
 
     exitTrailPlayback: () => set({ ...IDLE_PLAYBACK }),
 
-    forgeTrail: (title, description, nodeIds) => {
+    forgeTrail: (title, description, nodeIds) => get().createManualTrail(title, description, nodeIds),
+
+    createManualTrail: (name, description, cardIds, color) => {
       const state = get();
-      const known = new Set(state.nodes.map((n) => n.id));
-      const valid = nodeIds.filter((id) => known.has(id));
-      const trail = forgeCustomTrail(title, description, valid, "human", {
-        id: `t-${crypto.randomUUID().slice(0, 8)}`,
+      const trail = buildManualTrail({
+        title: name,
+        description,
+        cardIds,
+        knownNodeIds: state.nodes.map((n) => n.id),
+        existingTrailIds: state.trails.map((t) => t.id),
+        idSeed: crypto.randomUUID().slice(0, 8),
         createdAt: new Date().toISOString(),
+        color,
       });
-      if (trail.nodeIds.length < 2) return null;
-      commit(createTrailPure(pick(state), trail));
+      if (trail === null) return null;
+      const next = createTrailPure(pick(state), trail);
+      if (next.trails === state.trails) return null;
+      commit(next);
       return trail.id;
+    },
+
+    deleteTrail: (trailId) => {
+      const state = get();
+      if (!state.trails.some((t) => t.id === trailId)) return;
+      // `commit` ends playback when the active trail is the one that vanished.
+      commit(removeTrailPure(pick(state), trailId));
+    },
+
+    loadTrailIntoLever: (trailId) => {
+      const lever = loadTrailState(get().trails, trailId);
+      if (lever === null) return;
+      set({
+        ...lever,
+        isCuratorDrawerOpen: false,
+        trailCameraNonce: get().trailCameraNonce + 1,
+      });
     },
 
     generateAndAddAutoTrails: () => {

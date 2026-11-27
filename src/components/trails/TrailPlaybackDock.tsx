@@ -1,11 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { generateTrailBriefing } from "@/core/synthesis-engine";
+import { shouldDockHandleKeys } from "@/core/curators-index";
 import { EDGE_COLORS } from "@/core/types";
-import { ExportBriefingModal } from "../canvas/ExportBriefingModal";
 import { selectActiveTrail } from "@/store/trail-selectors";
+import { isEditableTarget, isModalDialogOpen } from "./key-context";
+import { selectIsBriefingOpen, useBriefingSession } from "@/store/useBriefingSession";
 import { useMemexStore, type MemexStore } from "@/store/useMemexStore";
 import { showToast } from "@/store/useToastStore";
 import { rgba, skinFor } from "../canvas/card-skins";
@@ -49,21 +50,13 @@ export function TrailPlaybackDock() {
   const toggle = useMemexStore(selectToggle);
   const exit = useMemexStore(selectExit);
 
-  // Briefing snapshot taken when the export button is pressed (not on every store change).
-  const [briefing, setBriefing] = useState<{ trailId: string; markdown: string } | null>(null);
-  const exportOpen = briefing !== null;
-  const closeExport = useCallback(() => setBriefing(null), []);
-  const openExport = useCallback(() => {
-    const { trails, nodes, edges, activeTrailId } = useMemexStore.getState();
-    const active = trails.find((t) => t.id === activeTrailId);
-    if (!active) return;
-    setBriefing({
-      trailId: active.id,
-      markdown: generateTrailBriefing(active, nodes, edges, {
-        generatedDate: new Date().toISOString().slice(0, 10),
-      }),
-    });
-  }, []);
+  // The briefing dialog is shared with the Curator's Index (`BriefingHost` renders it);
+  // the dock only opens it for its own trail and mutes its keys while it is open.
+  const exportOpen = useBriefingSession(selectIsBriefingOpen);
+  const trailId = trail?.id ?? null;
+  const openExport = () => {
+    if (trailId !== null) useBriefingSession.getState().openBriefing(trailId);
+  };
   const total = trail?.nodeIds.length ?? 0;
   const card = useCurrentCard(trail?.nodeIds[index]);
   const accent = trail ? EDGE_COLORS[trail.origin] : EDGE_COLORS.human;
@@ -93,17 +86,18 @@ export function TrailPlaybackDock() {
     }
   }, [trail, index, total]);
 
-  // Keyboard: arrows step, Escape exits (ignored while typing or while the export modal is open).
+  // Keyboard: arrows step, Escape exits. Ignored while typing, while the briefing
+  // dialog is open and while the Curator's Index is open (it owns Escape then).
   useEffect(() => {
     if (trail === null || exportOpen) return;
     const onKey = (e: KeyboardEvent) => {
-      const el = e.target;
-      if (
-        el instanceof HTMLElement &&
-        (el.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName))
-      ) {
-        return;
-      }
+      const drawerOpen = useMemexStore.getState().isCuratorDrawerOpen;
+      const keys = {
+        drawerOpen,
+        modalOpen: isModalDialogOpen(),
+        targetIsEditable: isEditableTarget(e.target),
+      };
+      if (!shouldDockHandleKeys(keys)) return;
       if (e.key === "ArrowRight") {
         // Next is held at the last stop; say why nothing moved.
         if (atEnd && !e.repeat) showToast("TRAIL_END");
@@ -263,13 +257,6 @@ export function TrailPlaybackDock() {
           </motion.section>
         ) : null}
       </AnimatePresence>
-      {briefing !== null ? (
-        <ExportBriefingModal
-          markdown={briefing.markdown}
-          trailId={briefing.trailId}
-          onClose={closeExport}
-        />
-      ) : null}
     </>
   );
 }

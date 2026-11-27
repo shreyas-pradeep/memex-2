@@ -10,6 +10,7 @@ export const TRAIL_CAMERA_MS = 800;
 
 const selectActiveTrailId = (s: MemexStore) => s.activeTrailId;
 const selectActiveTrailIndex = (s: MemexStore) => s.activeTrailIndex;
+const selectCameraNonce = (s: MemexStore) => s.trailCameraNonce;
 
 function toNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
@@ -18,10 +19,16 @@ function toNumber(value: unknown): number | undefined {
 /**
  * Glides the camera to each trail stop. Renders nothing. Must be mounted
  * inside `ReactFlowProvider`.
+ *
+ * The effect re-runs when the active trail or stop changes, which already
+ * covers loading a trail from the Curator's Index (the trail id or the stop
+ * changes). `trailCameraNonce` covers the one remaining case: loading the trail
+ * that is already playing at stop 1 after the user has panned away.
  */
 export function TrailCameraDirector() {
   const trailId = useMemexStore(selectActiveTrailId);
   const index = useMemexStore(selectActiveTrailIndex);
+  const nonce = useMemexStore(selectCameraNonce);
   const { setCenter, getInternalNode } = useReactFlow<MemexNode, AssociativeEdge>();
 
   useEffect(() => {
@@ -49,7 +56,7 @@ export function TrailCameraDirector() {
       zoom: TRAIL_ZOOM,
       duration: TRAIL_CAMERA_MS,
     });
-  }, [trailId, index, setCenter, getInternalNode]);
+  }, [trailId, index, nonce, setCenter, getInternalNode]);
 
   return null;
 }

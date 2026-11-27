@@ -1,7 +1,7 @@
 # Requirements Document: The Ghost & Sprocket (UX Mischief & Guidance Suite)
 ## Introduction
 This specification adds a small cast of helpers to Memex 2.0: **Sprocket**, a brass microfilm crawler that sits on cards, scurries along trail wires and reacts to the Ghost Engine; a **Ghost Guidance Beacon** that tells the user what to do next; and **retro toasts** for three user mistakes. *(Spec 07 later added a fourth toast, `NO_AUTO_TRAIL`, and gave Sprocket squash-and-stretch physics, eye tracking and a weaving show. The notes marked "Spec 07" below record what changed.)* All of it is presentation. It reads the graph and playback state, writes nothing to the graph, and adds no persisted or exported state.
-Terminology maps to the real codebase: a "card" is a `MemexNode` in the store's `nodes`; the active trail step is `activeTrailIndex`; auto-play is `isPlayingAuto`; discoveries are `ghostDiscoveries`. "The 1945 Lever" is the `TrailPlaybackDock`, which appears only while a trail is active. The trail picker is the top-center `TrailSelectorMenu` ("Trails · N"), not the dock. The Wake button reads "⚡ Wake Ghost Engine" (the HUD sets it in capitals).
+Terminology maps to the real codebase: a "card" is a `MemexNode` in the store's `nodes`; the active trail step is `activeTrailIndex`; auto-play is `isPlayingAuto`; discoveries are `ghostDiscoveries`. "The 1945 Lever" is the `TrailPlaybackDock`, which appears only while a trail is active. The trail picker was the top-center `TrailSelectorMenu` ("Trails · N"); since Spec 08 it is the Curator's Index (top-center `[📜 TRAILS & REELS (N)]` button and the `[T]` key), not the dock. The Wake button reads "⚡ Wake Ghost Engine" (the HUD sets it in capitals).
 ## Requirements
 ### Requirement 1: Sprocket Sprite
 **User Story:** As a researcher, I want a small mechanical companion on the canvas, so that the archive feels inhabited without getting in my way.
@@ -57,14 +57,14 @@ Terminology maps to the real codebase: a "card" is a `MemexNode` in the store's 
    | 4 | `trail-active` | trail active | "Press [▶] to begin automated camera walkthrough, or use [Next] to step manually." |
    | 5 | `discoveries-pending` | at least one discovery | "The Ghost found hidden links. Click a ⚡ SYNAPSE badge on the canvas to open the inspector." |
    | 6 | `idle-whisper` | idle for more than 15000 ms | "The archives whisper... tap [⚡ WAKE GHOST ENGINE] to reveal hidden latent connections." |
-   | 7 | `no-trails` | trail count known and 0 | "No trails charted yet. Select two or more cards, then press [+ Forge Trail] at the top." |
-   | 8 | `cards-no-trail` | otherwise | "Select an associative trail from the Trails menu at the top to pull up the 1945 Lever." |
+   | 7 | `no-trails` | trail count known and 0 | "No trails charted yet. Select two or more cards, then open [📜 TRAILS & REELS] or press [T] and choose [+ BLAZE NEW TRAIL]." |
+   | 8 | `cards-no-trail` | otherwise | "Open [📜 TRAILS & REELS] or press [T] to pick an associative trail and pull up the 1945 Lever." |
 
 4. THE idle time SHALL be strictly greater than `IDLE_THRESHOLD_MS` (15000) to count as idle; NaN and negative values SHALL NOT count.
 5. THE SYSTEM SHALL measure idle time with passive, throttled listeners (pointer, keyboard, wheel, touch) that are removed on unmount *(Spec 07: one shared set, `activity-tracker.ts`, also used by Sprocket's weave prompt)*, and a one-second timer that sets state only when the idle flag flips. Activity SHALL reset the flag at once.
 6. THE beacon SHALL re-render only when one of its primitive inputs changes, so a card drag does not re-render it, and its live region SHALL announce only a change of state.
 7. THE beacon SHALL offer a visible "✕" control (labelled "Hide ghost hints") that collapses it to a "Show ghost hints" button. THE choice SHALL last for the session only and SHALL NOT be persisted.
-8. THE bracketed control names SHALL match the real controls: `[I]` (shortcut), "▶ Auto-Play" / "❚❚ Auto-Play" and "Next ▶" (dock), "⚡ Wake Ghost Engine" (HUD, shown in capitals), "+ Forge Trail" (Trails menu), and Escape (exits playback).
+8. THE bracketed control names SHALL match the real controls: `[I]` (shortcut), "▶ Auto-Play" / "❚❚ Auto-Play" and "Next ▶" (dock), "⚡ Wake Ghost Engine" (HUD, shown in capitals), "[📜 TRAILS & REELS]" and `[T]` (Curator's Index), "[+ BLAZE NEW TRAIL]" (its form), and Escape (exits playback).
 ### Requirement 6: Retro Toasts
 **User Story:** As a researcher, I want playful but clear notices when something does not work, so that mistakes explain themselves.
 #### Acceptance Criteria
@@ -90,4 +90,4 @@ Terminology maps to the real codebase: a "card" is a `MemexNode` in the store's 
 4. THE crawler SHALL write positions to motion values, not React state, so a scurry causes no re-renders; it SHALL subscribe to the store outside React and re-render only on perch card, active trail, scanning flag or quantised zoom changes.
 5. THE counter-scale that keeps Sprocket legible when zoomed out SHALL be quantised to quarter zoom steps, so it is not a per-frame viewport subscription.
 6. THE SYSTEM SHALL use only the palette `#090A0F`, `#141721`, `#FFB236`, `#B388FF`, parchment `#F4F1EA` and the brass `#D97706` / `#B45309` of the sprite.
-7. THE new UI SHALL NOT overlap the HUD, the Trails menu, the playback dock, the timeline, the drawer or the modals.
+7. THE new UI SHALL NOT overlap the HUD, the Curator's Index trigger, the playback dock, the timeline, the drawer or the modals.

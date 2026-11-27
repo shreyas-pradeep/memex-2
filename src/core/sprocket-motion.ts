@@ -401,7 +401,7 @@ export const WEAVE_MIN_CARDS = 3;
 
 export const WEAVE_BUTTON_LABEL = "🧶 AUTO-WEAVE TRAIL";
 export const WEAVE_PROMPT_TEXT = "I see a trail through these papers! Tap me to weave it.";
-export const WEAVE_CANCELLED_TEXT = "Weave halted. Any trail already forged stays in the Trails menu.";
+export const WEAVE_CANCELLED_TEXT = "Weave halted. Any trail already forged stays in [📜 TRAILS & REELS].";
 /** Screen-reader progress line while weaving: `stop` is the 1-based stop Sprocket has reached. */
 export function weaveProgressText(title: string, stop: number, total: number): string {
   const t = Number.isFinite(total) ? Math.max(1, Math.floor(total)) : 1;

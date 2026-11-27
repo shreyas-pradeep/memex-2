@@ -83,20 +83,33 @@ export function getPrevTrailIndex(current: number, length: number): number {
 }
 
 /**
+ * A valid trail accent as upper-case `#RRGGBB`, or `undefined` for anything
+ * else (wrong type, short hex, named colors, alpha). Used when a color is
+ * stored and again when it is read, so an edited save cannot inject a bad value.
+ */
+export function normalizeTrailColor(color: unknown): string | undefined {
+  return typeof color === "string" && /^#[0-9a-fA-F]{6}$/.test(color)
+    ? color.toUpperCase()
+    : undefined;
+}
+
+/**
  * Forges a trail from an ordered selection. The ID is derived from the inputs
  * so the result is deterministic; callers that need uniqueness pass `meta.id`.
+ * `meta.color` is kept only when it is a valid `#RRGGBB`; otherwise the trail
+ * has no `color` key at all.
  */
 export function forgeCustomTrail(
   title: string,
   description: string,
   nodeIds: readonly string[],
   origin: LinkOrigin,
-  meta: { id?: string; createdAt?: string } = {},
+  meta: { id?: string; createdAt?: string; color?: string } = {},
 ): Trail {
   const cleanTitle = title.trim() || "Untitled Trail";
   const id =
     meta.id ?? `t-${origin}-${hashString(`${cleanTitle}\u0000${nodeIds.join("\u0000")}`)}`;
-  return createTrail(
+  const trail = createTrail(
     id,
     cleanTitle,
     description.trim(),
@@ -104,6 +117,8 @@ export function forgeCustomTrail(
     origin,
     meta.createdAt ?? TRAIL_EPOCH,
   );
+  const color = normalizeTrailColor(meta.color);
+  return color === undefined ? trail : { ...trail, color };
 }
 
 // ---------------------------------------------------------------------------

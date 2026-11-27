@@ -10,7 +10,7 @@ Pure trail logic lives in `src/core/trail-engine.ts` (no React, no clock, no ran
 - `src/components/canvas/ArchivalCardNode.tsx` and `AssociativePulseEdge.tsx`: fade to 0.2 opacity when `dim`; trail cards show a `box-shadow` glow layer whose opacity animates.
 - `src/components/trails/TrailCameraDirector.tsx`: effect on `activeTrailIndex` calls `setCenter(x + w/2, y + h/2, { zoom: 1.15, duration: 800 })`.
 - `src/components/trails/TrailPlaybackDock.tsx`: "The 1945 Lever" dock, framer-motion spring (stiffness 300, damping 28), transform-only countdown bar.
-- `src/components/trails/TrailSelectorMenu.tsx`: top HUD to launch trails and "+ FORGE TRAIL".
+- ~~`src/components/trails/TrailSelectorMenu.tsx`~~ (removed in Spec 08): the top dropdown and "+ FORGE TRAIL" were replaced by the Curator's Index drawer (`CuratorsIndexDrawer.tsx`, `CuratorsIndexTrigger.tsx`) and "+ BLAZE NEW TRAIL". `forgeTrail` stays in the store and now delegates to `createManualTrail`.
 
 Traversal convention: for a trail of length `N`, indices are `0..N-1`; an empty trail yields `-1`, which the store treats as "exit playback".
 

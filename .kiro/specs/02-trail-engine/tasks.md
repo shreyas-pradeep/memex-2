@@ -11,7 +11,7 @@
   - Add `src/store/trail-selectors.ts` with granular dimming selectors and store tests.
   - _Requirements: 1.3, 1.4, 2.1, 2.3, 3.1, 3.3_
 - [x] 3. Build trail UI components and dimming
-  - Create `src/components/trails/TrailCameraDirector.tsx`, `TrailPlaybackDock.tsx`, and `TrailSelectorMenu.tsx`; mount them in `src/components/canvas/MemexCanvas.tsx`.
+  - Create `src/components/trails/TrailCameraDirector.tsx`, `TrailPlaybackDock.tsx`, and `TrailSelectorMenu.tsx` (the menu was replaced by the Curator's Index in Spec 08); mount them in `src/components/canvas/MemexCanvas.tsx`.
   - Dim non-trail cards and edges to 0.2 opacity and glow trail cards in `ArchivalCardNode.tsx` and `AssociativePulseEdge.tsx` without SVG filters or backdrop-blur.
   - Verify with `npx tsc --noEmit` and `npm test`, then commit: `feat(spec-02): implement Vannevar Bush trail engine and cinematic playback dock`.
   - _Requirements: 1.1, 1.2, 3.1, 3.2, 4.1, 4.2, 4.3, 4.4, 4.5_
