@@ -48,7 +48,11 @@ Changed: `types.ts` (`cassetteId?`, `cassetteTitle?`), `ghost-engine.ts` (shared
 | e | dangling edges rejected or dropped | rejected | See section 7. |
 | f | `ZIP` in `vault-bundle.ts` | `obsidian-export.ts` re-exported from `vault-bundle.ts`, writer in `zip.ts` | Keeps each file focused. Import paths from `vault-bundle` work as requested. |
 | g | cassette "unless the same source" | same id and same title reuse the cassette | Same text always hashes to the same id, so re-ingesting a source joins its cassette. A different title on the same id (a hash collision, or a hand-built id) gets `-2`, `-3`. |
-| h | spec 08 drawer reducer | kept for the old tests and UI; the dock reducer replaces its role | Phase B deletes the drawer component; `curatorDrawerReducer` and its tests stay until then. |
+| h | spec 08 drawer reducer | kept for the old tests; the dock reducer replaces its role | Phase B deleted the drawer component; `curatorDrawerReducer` and its tests stay in the core. |
+| i | `CommandDock`, 44 px rail, 420 px panel, `DockFooter` (phase B) | `ResearchCommandDock` in `components/canvas/`, 48 px rail, 400 px panel, no footer | Names and sizes follow the Phase B request. The vault actions moved to a top-bar `[💾 VAULT]` menu, because a footer in a right dock is out of reach while it is collapsed. |
+| j | `CassetteFrames`, a div per cassette "in the viewport layer" | `MicroficheCassetteOverlay`, plate at `z-index: -1` and label tab at `z-index: 5` in one `ViewportPortal` | See section 5. |
+| k | Escape only collapses the dock | collapsing from the Synapse tab also clears the selection | The old inspector's Escape closed it and cleared the selection; the pill would otherwise stay highlighted with no panel. |
+| l | Toasts have fixed catalog text | `pushToast(state, kind, message?)` and the kinds `SNAP`, `VAULT`, `VAULT_ERROR` | A snap and a restore name their cards or counts. |
 
 Superseded behavior (documented in specs 03 and 08): the Curator's Index left drawer becomes the Trails tab of the right dock; the Synapse Inspector drawer becomes the Synapse tab; the narrow-screen exclusion between them is moot.
 
@@ -91,7 +95,7 @@ The gap is symmetric, never negative, and 0 for overlapping cards.
 
 All SVG, no filters, `transform` and `opacity` only.
 
-- **Where:** one overlay component inside `<ReactFlow>` (a `ViewportPortal` or an edge-layer `<svg>` that shares the viewport transform), mounted once. It subscribes to `magneticTarget` (changes only when the offer changes) and reads the two card rectangles for positions.
+- **Where:** one overlay component inside `<ReactFlow>` using `ViewportPortal`, mounted once. Z-order: the arc layer has `z-index: 900` (above idle cards and edges at 0, below the dragged card, which React Flow elevates to 1000 on select) and the whisper pill `1100`; both set `pointer-events: none`, so a drag is never blocked. It subscribes to `magneticTarget` (changes only when the offer changes) and reads the two card rectangles for positions.
 - **Path:** a quadratic Bezier from the closest point on the dragged rectangle to the closest point on the target rectangle. Closest points: clamp the other rectangle's center into this rectangle (and the reverse). Control point = midpoint pushed 20% of the length along the normal, so the arc always bows the same way.
   ```
   M p0 Q c p1      c = mid + n * 0.2 * |p1 - p0|
@@ -118,6 +122,7 @@ p = padding (default 24); a negative or non-finite padding counts as 0
 - `moveCassette` adds `(dx, dy)` to every member position and keeps non-members by reference. The frame moves with its members, which a test checks.
 
 ### Frame component (phase B)
+- **Z-order (verified in `@xyflow/react` 13.0.3 and `@xyflow/system` 1.0.1):** `ViewportPortal` renders into `.react-flow__viewport-portal`, the LAST child of `.react-flow__viewport` (after the edges, the connection line, the edge-label layer and the nodes). The portal element has no `z-index`, so it creates no stacking context; the viewport does (it carries the pan/zoom `transform`). Cards are positioned with `z-index: 0` (`1000` when selected, `elevateNodesOnSelect`). A portal child therefore paints ABOVE idle cards by default; a child with `z-index: -1` paints below every card and edge but above the `Background`. The plate uses `-1` and `pointer-events: none`; the label tab uses `5` (above idle cards, below selected ones) with `pointer-events: auto` and the `nopan nodrag nowheel` classes, and sits above the frame's top edge so it rarely meets a card.
 - Rendered in React Flow's viewport layer, below the cards, one absolutely positioned `<div>` per cassette at flow coordinates (dashed `rgba(255,178,54,0.45)` border, `#141721` at 0.35). Frames come from `groupCassettes(nodes)` and `cassetteFrame(nodes, id)` in a `useMemo`; the count is small, and card drags change the frame as they should.
 - The label tab "CASSETTE // title" is the drag handle: on `pointerdown` capture the pointer; on `pointermove` call `moveCassette(id, ddx / zoom, ddy / zoom)` with the delta since the last event; on `pointerup` call `moveCassette(id, 0, 0, { commit: true })`.
 
@@ -143,7 +148,7 @@ flowchart TD
   RF --> CARD[ArchivalCardNode: combinedDimOpacity]
 ```
 
-The dock sits outside `<ReactFlow>` (z-index 40, below modals 2000 and the toaster 2100). The rail is 44 px wide and always visible; the expanded panel is 420 px (`max-w-[90vw]`). It slides in with `x: 100%` to `0` on the spring `{ stiffness: 300, damping: 28 }`, or fades in 150 ms under `prefers-reduced-motion`.
+The dock sits outside `<ReactFlow>` (z-index 40, below modals 2000 and the toaster 2100). The rail is 48 px wide and always visible; the expanded panel is 400 px (capped at 90vw). `MemexCanvas` publishes `--memex-dock-inset` (rail, or rail plus panel on viewports of 900 px and wider); the minimap and the toaster shift left by it (class `memex-dock-shift`), and the timeline and the playback dock shift by half of it and narrow their maximum width (class `memex-dock-shift-half`), all with `transform` only. Below 900 px the open panel overlays the canvas. It slides in with `x: 100%` to `0` on the spring `{ stiffness: 300, damping: 28 }`, or fades in 150 ms under `prefers-reduced-motion`.
 
 ### State machine
 

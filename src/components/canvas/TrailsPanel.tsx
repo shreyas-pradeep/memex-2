@@ -7,21 +7,14 @@ import {
   useId,
   useRef,
   useState,
-  type KeyboardEvent as ReactKeyboardEvent,
-  type RefObject,
 } from "react";
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   BLAZE_ORDER_HINT,
-  CURATOR_DRAWER_ID,
   CURATOR_EMPTY_TEXT,
   CURATOR_TITLE,
-  CURATOR_TRIGGER_ID,
   blazeFormState,
-  curatorDrawerReducer,
   parseTrailCardModels,
   weaveQuickAction,
-  type CuratorKeyEvent,
   type TrailCardModel,
 } from "@/core/curators-index";
 import { WEAVE_BUTTON_LABEL } from "@/core/sprocket-motion";
@@ -31,32 +24,21 @@ import {
   selectCuratorActiveTrailId,
   selectCuratorCardCount,
   selectCuratorTrailCount,
-  selectIsCuratorOpen,
   selectSelectionSignature,
   selectTrailListSignature,
 } from "@/store/curator-selectors";
 import { useBriefingSession } from "@/store/useBriefingSession";
-import { useMemexStore, type MemexStore } from "@/store/useMemexStore";
+import { useMemexStore } from "@/store/useMemexStore";
 import {
   selectIsWeaving,
   selectWeavingTrailId,
   useSprocketSession,
 } from "@/store/useSprocketSession";
-import { rgba } from "../canvas/card-skins";
-import { isEditableTarget, isModalDialogOpen } from "./key-context";
-
-const SPRING = { type: "spring", stiffness: 300, damping: 28 } as const;
-/** Reduced motion: no slide, a short fade. */
-const FADE = { duration: 0.15, ease: "linear" } as const;
+import { rgba } from "./card-skins";
 
 const AMBER = EDGE_COLORS.human;
 const VIOLET = EDGE_COLORS.ghost;
 const BORDER = "rgba(255, 178, 54, 0.2)";
-
-/** Below this width the drawer and the Synapse Inspector would cover the canvas together. */
-const NARROW_QUERY = "(max-width: 1099px)";
-
-const selectInspectorOpen = (s: MemexStore) => s.selectedGhostDiscoveryId !== null;
 
 const BTN =
   "cursor-pointer rounded-xl border px-3 py-2 font-mono text-[11px] font-semibold uppercase tracking-[0.14em] shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_2px_0_rgba(0,0,0,0.65)] transition-[color,border-color,transform] duration-100 active:translate-y-[2px] disabled:cursor-not-allowed disabled:opacity-40 disabled:active:translate-y-0 focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2";
@@ -64,95 +46,6 @@ const BTN_AMBER = `${BTN} border-[#FFB236]/50 bg-[#141721] text-[#FFB236] hover:
 const BTN_VIOLET = `${BTN} border-[#B388FF]/55 bg-[#141721] text-[#B388FF] hover:border-[#B388FF] focus-visible:outline-[#B388FF]`;
 const BTN_QUIET = `${BTN} border-white/10 bg-[#141721] text-text-muted hover:text-text-primary focus-visible:outline-[#FFB236]`;
 const LABEL = "font-mono text-[10px] uppercase tracking-[0.18em] text-text-muted";
-
-// ---------------------------------------------------------------------------
-// Keyboard: [T] toggles, Escape closes, and nothing underneath reacts to either
-// ---------------------------------------------------------------------------
-
-/**
- * One window `keydown` listener in the capture phase. The pure reducer decides
- * whether the key means anything. When the drawer closes on Escape, the event
- * is stopped before it reaches the bubble-phase listeners (the playback dock's
- * "Escape exits", the Synapse Inspector's, the weave cancel), so Escape closes
- * the drawer and nothing else. Removed on unmount.
- */
-function useCuratorKeyboard(panelRef: RefObject<HTMLElement | null>): void {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const store = useMemexStore.getState();
-      const target = e.target;
-      const event: CuratorKeyEvent = {
-        key: e.key,
-        ctrlKey: e.ctrlKey,
-        metaKey: e.metaKey,
-        altKey: e.altKey,
-        shiftKey: e.shiftKey,
-        repeat: e.repeat,
-        defaultPrevented: e.defaultPrevented,
-        targetIsEditable: isEditableTarget(target),
-        targetInsideDrawer: target instanceof Node && panelRef.current?.contains(target) === true,
-        modalOpen: isModalDialogOpen(),
-      };
-      const before = store.isCuratorDrawerOpen;
-      const after = curatorDrawerReducer(before, { type: "key", event });
-      if (after === before) return;
-      e.preventDefault();
-      if (e.key === "Escape") e.stopPropagation();
-      store.setCuratorDrawerOpen(after);
-    };
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, [panelRef]);
-}
-
-/**
- * Focus moves into the drawer when it opens and back to the top-bar trigger
- * when it closes (a skipped return lets the Synapse Inspector keep focus when
- * it takes over a narrow screen).
- */
-function useDrawerFocus(
-  open: boolean,
-  panelRef: RefObject<HTMLElement | null>,
-  skipReturnRef: RefObject<boolean>,
-): void {
-  const wasOpen = useRef(false);
-  useEffect(() => {
-    if (open) {
-      wasOpen.current = true;
-      panelRef.current?.focus({ preventScroll: true });
-      return;
-    }
-    if (!wasOpen.current) return;
-    wasOpen.current = false;
-    if (skipReturnRef.current) {
-      skipReturnRef.current = false;
-      return;
-    }
-    document.getElementById(CURATOR_TRIGGER_ID)?.focus({ preventScroll: true });
-  }, [open, panelRef, skipReturnRef]);
-}
-
-/**
- * On a narrow viewport the drawer and the Synapse Inspector exclude each other:
- * whichever opens last closes the other. Wide viewports show both.
- */
-function useInspectorExclusion(open: boolean, skipReturnRef: RefObject<boolean>): void {
-  const inspectorOpen = useMemexStore(selectInspectorOpen);
-  const previous = useRef({ open: false, inspector: false });
-  useEffect(() => {
-    const before = previous.current;
-    previous.current = { open, inspector: inspectorOpen };
-    if (!open || !inspectorOpen) return;
-    if (typeof window === "undefined" || !window.matchMedia(NARROW_QUERY).matches) return;
-    const store = useMemexStore.getState();
-    if (!before.open) {
-      store.selectGhostDiscovery(null);
-    } else if (!before.inspector) {
-      skipReturnRef.current = true;
-      store.setCuratorDrawerOpen(false);
-    }
-  }, [open, inspectorOpen, skipReturnRef]);
-}
 
 // ---------------------------------------------------------------------------
 // Trail card
@@ -474,17 +367,22 @@ function BlazeSection({
 }
 
 // ---------------------------------------------------------------------------
-// Drawer body
+// Panel body
 // ---------------------------------------------------------------------------
 
-/** Keeps the last real value while the drawer slides out and its selectors go quiet (`""`). */
+/** Keeps the last real value while the dock slides out and its selectors go quiet (`""`). */
 function useHeld(signature: string): string {
   const [held, setHeld] = useState(signature);
   if (signature !== "" && signature !== held) setHeld(signature);
   return signature === "" ? held : signature;
 }
 
-function DrawerBody() {
+/**
+ * "Reels & Trails": the Curator's Index (Spec 08) as the first tab of the
+ * command dock. Its subscriptions are primitive strings that stay empty while
+ * the Trails tab is not showing, so a card drag never re-renders it.
+ */
+export function TrailsPanel() {
   const trailSignature = useHeld(useMemexStore(selectTrailListSignature));
   const selectionSignature = useHeld(useMemexStore(selectSelectionSignature));
   const trailCount = useMemexStore(selectCuratorTrailCount);
@@ -510,7 +408,7 @@ function DrawerBody() {
 
   const onWeave = useCallback(() => {
     // The gated request: refuses with fewer than 3 cards, an active trail or a weave in progress.
-    if (requestWeave()) useMemexStore.getState().setCuratorDrawerOpen(false);
+    if (requestWeave()) useMemexStore.getState().collapseDock();
   }, [requestWeave]);
   const onLoad = useCallback((id: string) => useMemexStore.getState().loadTrailIntoLever(id), []);
   const onBriefing = useCallback((id: string) => void useBriefingSession.getState().openBriefing(id), []);
@@ -532,35 +430,23 @@ function DrawerBody() {
 
   return (
     <>
-      <header className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.2em] text-text-muted">
-            <span
-              aria-hidden="true"
-              className="h-1.5 w-1.5 rounded-full"
-              style={{ background: AMBER, boxShadow: "0 0 8px 2px rgba(255, 178, 54, 0.6)" }}
-            />
-            <span role="status">
-              {trailCount} {trailCount === 1 ? "trail" : "trails"} on file
-            </span>
-          </div>
-          <h2
-            id="curators-index-title"
-            className="mt-1 font-mono text-[13px] font-semibold uppercase leading-snug tracking-[0.14em] text-text-primary"
-            style={{ textShadow: "0 0 10px rgba(255, 178, 54, 0.45)" }}
-          >
-            {CURATOR_TITLE}
-          </h2>
+      <header className="min-w-0">
+        <div className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.2em] text-text-muted">
+          <span
+            aria-hidden="true"
+            className="h-1.5 w-1.5 rounded-full"
+            style={{ background: AMBER, boxShadow: "0 0 8px 2px rgba(255, 178, 54, 0.6)" }}
+          />
+          <span role="status">
+            {trailCount} {trailCount === 1 ? "trail" : "trails"} on file
+          </span>
         </div>
-        <button
-          type="button"
-          onClick={() => useMemexStore.getState().setCuratorDrawerOpen(false)}
-          aria-label="Close the Curator's Index"
-          title="Close (Esc)"
-          className={`${BTN_QUIET} shrink-0 px-2.5 py-1.5`}
+        <h2
+          className="mt-1 font-mono text-[13px] font-semibold uppercase leading-snug tracking-[0.14em] text-text-primary"
+          style={{ textShadow: "0 0 10px rgba(255, 178, 54, 0.45)" }}
         >
-          <span aria-hidden="true">[✕ CLOSE / ESC]</span>
-        </button>
+          {CURATOR_TITLE}
+        </h2>
       </header>
 
       <div>
@@ -635,62 +521,3 @@ function DrawerBody() {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Drawer
-// ---------------------------------------------------------------------------
-
-/**
- * "The Curator's Index": the left slide-out reel archive. A non-modal dialog
- * (no focus trap, `aria-modal="false"`): focus moves in when it opens and back
- * to the top-bar trigger when it closes. It overlays the HUD while open and
- * stays below the dialogs (z 2000) and the toaster (z 2100).
- *
- * Its subscriptions are primitive strings that stay empty while it is closed,
- * so a card drag never re-renders it and never re-renders the canvas because of
- * it. Only `transform` and `opacity` animate.
- */
-export function CuratorsIndexDrawer() {
-  const open = useMemexStore(selectIsCuratorOpen);
-  const reduce = useReducedMotion() === true;
-  const panelRef = useRef<HTMLElement | null>(null);
-  const skipReturnRef = useRef(false);
-
-  useCuratorKeyboard(panelRef);
-  useDrawerFocus(open, panelRef, skipReturnRef);
-  useInspectorExclusion(open, skipReturnRef);
-
-  // Backspace and Delete delete the selected cards on the canvas (React Flow listens on the
-  // document). Keep them away from the buttons in here; text fields are already ignored.
-  const onKeyDown = (e: ReactKeyboardEvent<HTMLElement>) => {
-    if (e.key === "Backspace" || e.key === "Delete") e.stopPropagation();
-  };
-
-  return (
-    <AnimatePresence>
-      {open ? (
-        <motion.aside
-          key="curators-index"
-          ref={panelRef}
-          id={CURATOR_DRAWER_ID}
-          role="dialog"
-          aria-modal="false"
-          aria-label="The Curator's Index"
-          tabIndex={-1}
-          onKeyDown={onKeyDown}
-          initial={reduce ? { opacity: 0 } : { x: "-100%" }}
-          animate={reduce ? { opacity: 1 } : { x: 0 }}
-          exit={reduce ? { opacity: 0 } : { x: "-100%" }}
-          transition={reduce ? FADE : SPRING}
-          className="absolute top-4 bottom-4 left-4 z-40 flex w-[420px] max-w-[90vw] flex-col gap-3 rounded-2xl border bg-[#090A0F] p-4 outline-none focus-visible:outline focus-visible:outline-1 focus-visible:outline-[#FFB236]"
-          style={{
-            borderColor: BORDER,
-            boxShadow:
-              "inset 0 1px 0 rgba(255,255,255,0.06), 0 16px 48px rgba(0,0,0,0.75), 0 0 24px rgba(255,178,54,0.08)",
-          }}
-        >
-          <DrawerBody />
-        </motion.aside>
-      ) : null}
-    </AnimatePresence>
-  );
-}

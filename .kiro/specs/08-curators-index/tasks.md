@@ -1,5 +1,7 @@
 # Implementation Plan: 08-curators-index
 
+> **Superseded by Spec 09 (UI only).** The UI tasks below (drawer, trigger, keyboard hook) were replaced by the command dock; see `.kiro/specs/09-command-console-and-tactile-engine/tasks.md`.
+
 - [x] 1. Author the spec
   - Create `requirements.md`, `design.md` and `tasks.md` in `.kiro/specs/08-curators-index/`.
   - _Requirements: 1.1 to 11.5_

@@ -501,8 +501,9 @@ export interface GuidanceMessage {
  * Hint text per state. Bracketed names match the real controls: `[I]` opens the
  * platen, `[▶]` and `[❚❚ Auto-Play]` are the dock's auto-play button, `[Next]` is
  * "Next ▶", `[⚡ WAKE GHOST ENGINE]` is the HUD's "⚡ Wake Ghost Engine" button (set in
- * capitals by its CSS), `[📜 TRAILS & REELS]` (or `[T]`) opens the Curator's Index and
- * `[+ BLAZE NEW TRAIL]` is its form button.
+ * capitals by its CSS), the `[📜]` icon on the right-hand rail (or `[T]`) opens the Reels & Trails
+ * tab of the command dock (Spec 09; it replaced the Spec 08 top button) and
+ * `[+ BLAZE NEW TRAIL]` is that tab's form button.
  */
 export const GUIDANCE_TEXT: Readonly<Record<GuidanceStateId, string>> = {
   "empty-canvas": "The microfilm reels are blank. Press [I] to scan a document onto the platen.",
@@ -515,9 +516,9 @@ export const GUIDANCE_TEXT: Readonly<Record<GuidanceStateId, string>> = {
   "idle-whisper":
     "The archives whisper... tap [⚡ WAKE GHOST ENGINE] to reveal hidden latent connections.",
   "no-trails":
-    "No trails charted yet. Select two or more cards, then open [📜 TRAILS & REELS] or press [T] and choose [+ BLAZE NEW TRAIL].",
+    "No trails charted yet. Select two or more cards, then click the [📜] rail icon or press [T] and choose [+ BLAZE NEW TRAIL].",
   "cards-no-trail":
-    "Open [📜 TRAILS & REELS] or press [T] to pick an associative trail and pull up the 1945 Lever.",
+    "Click the [📜] rail icon or press [T] to pick an associative trail and pull up the 1945 Lever.",
 };
 
 /** Every guidance text names a control in brackets or starts an action with one of these verbs. */
@@ -566,7 +567,21 @@ export const ARXIV_INVALID_MESSAGE =
 export const NO_AUTO_TRAIL_MESSAGE =
   "The reels hold no clear trail yet, Professor. Add a few dated or related cards and try again.";
 
-export type ToastKind = "EMPTY_DROP" | "TRAIL_END" | "ARXIV_INVALID" | "NO_AUTO_TRAIL";
+export const SNAP_MESSAGE = "Synapse snapped. The two cards are now linked.";
+export const VAULT_MESSAGE = "The vault is secure, Professor.";
+export const VAULT_ERROR_MESSAGE = "The vault would not open. Nothing on the canvas was changed.";
+
+export type ToastKind =
+  | "EMPTY_DROP"
+  | "TRAIL_END"
+  | "ARXIV_INVALID"
+  | "NO_AUTO_TRAIL"
+  | "SNAP"
+  | "VAULT"
+  | "VAULT_ERROR";
+
+/** Longest custom toast text kept (characters). */
+export const TOAST_MESSAGE_MAX = 200;
 
 /** Message and monospace label for every toast kind. */
 export const TOAST_CATALOG: Readonly<Record<ToastKind, { label: string; message: string }>> = {
@@ -574,6 +589,9 @@ export const TOAST_CATALOG: Readonly<Record<ToastKind, { label: string; message:
   TRAIL_END: { label: "[ SIGNAL // FRONTIER ]", message: TRAIL_END_MESSAGE },
   ARXIV_INVALID: { label: "[ SIGNAL // LOST ]", message: ARXIV_INVALID_MESSAGE },
   NO_AUTO_TRAIL: { label: "[ SIGNAL // STATIC ]", message: NO_AUTO_TRAIL_MESSAGE },
+  SNAP: { label: "[ SIGNAL // LINKED ]", message: SNAP_MESSAGE },
+  VAULT: { label: "[ SIGNAL // VAULT ]", message: VAULT_MESSAGE },
+  VAULT_ERROR: { label: "[ SIGNAL // FAULT ]", message: VAULT_ERROR_MESSAGE },
 };
 
 /** Most toasts on screen at once. */
@@ -597,12 +615,16 @@ export interface ToastState {
 export const EMPTY_TOAST_STATE: ToastState = { toasts: [], nextId: 1 };
 
 /**
- * Adds a toast. A toast whose message equals the newest toast's message is
+ * Adds a toast. An optional `message` replaces the catalog text (whitespace
+ * collapsed, cut to `TOAST_MESSAGE_MAX`); a blank one is ignored. A toast whose message equals the newest toast's message is
  * dropped (same state returned). When more than `MAX_TOASTS` would show, the
  * oldest are removed.
  */
-export function pushToast(state: ToastState, kind: ToastKind): ToastState {
-  const copy = TOAST_CATALOG[kind];
+export function pushToast(state: ToastState, kind: ToastKind, message?: string): ToastState {
+  const base = TOAST_CATALOG[kind];
+  // An optional text replaces the catalog message (a toast that names its cards or counts).
+  const custom = message === undefined ? "" : message.replace(/\s+/g, " ").trim().slice(0, TOAST_MESSAGE_MAX);
+  const copy = custom === "" ? base : { label: base.label, message: custom };
   const newest = state.toasts[state.toasts.length - 1];
   if (newest !== undefined && newest.message === copy.message) return state;
   const entry: ToastEntry = { id: state.nextId, kind, label: copy.label, message: copy.message };

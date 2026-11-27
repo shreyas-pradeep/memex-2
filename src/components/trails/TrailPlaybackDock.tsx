@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { shouldDockHandleKeys } from "@/core/curators-index";
+import { shouldPlaybackHandleKeys } from "@/core/command-dock";
 import { EDGE_COLORS } from "@/core/types";
 import { selectActiveTrail } from "@/store/trail-selectors";
 import { isEditableTarget, isModalDialogOpen } from "./key-context";
@@ -87,17 +87,17 @@ export function TrailPlaybackDock() {
   }, [trail, index, total]);
 
   // Keyboard: arrows step, Escape exits. Ignored while typing, while the briefing
-  // dialog is open and while the Curator's Index is open (it owns Escape then).
+  // dialog is open and while the command dock is open (the dock collapses first on
+  // Escape: its capture-phase listener stops the event before this one sees it).
   useEffect(() => {
     if (trail === null || exportOpen) return;
     const onKey = (e: KeyboardEvent) => {
-      const drawerOpen = useMemexStore.getState().isCuratorDrawerOpen;
       const keys = {
-        drawerOpen,
+        dockOpen: useMemexStore.getState().commandDock.open,
         modalOpen: isModalDialogOpen(),
         targetIsEditable: isEditableTarget(e.target),
       };
-      if (!shouldDockHandleKeys(keys)) return;
+      if (!shouldPlaybackHandleKeys(keys)) return;
       if (e.key === "ArrowRight") {
         // Next is held at the last stop; say why nothing moved.
         if (atEnd && !e.repeat) showToast("TRAIL_END");
@@ -118,6 +118,8 @@ export function TrailPlaybackDock() {
 
   return (
     <>
+      {/* Centred in the area left of the command dock: shifted by half the dock inset (transform only). */}
+      <div className="memex-dock-shift-half pointer-events-none absolute inset-x-0 bottom-6 z-20 flex justify-center">
       <AnimatePresence>
         {trail !== null && total > 0 ? (
           <motion.section
@@ -127,7 +129,8 @@ export function TrailPlaybackDock() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 40 }}
             transition={SPRING}
-            className="pointer-events-auto absolute bottom-6 left-1/2 z-20 w-[min(640px,calc(100vw-2rem))] -translate-x-1/2"
+            className="pointer-events-auto"
+            style={{ width: "min(640px, calc(100vw - var(--memex-dock-inset, 48px) - 2rem))" }}
           >
             <div
               className="relative overflow-hidden rounded-2xl bg-[#141721] p-4"
@@ -257,6 +260,7 @@ export function TrailPlaybackDock() {
           </motion.section>
         ) : null}
       </AnimatePresence>
+      </div>
     </>
   );
 }

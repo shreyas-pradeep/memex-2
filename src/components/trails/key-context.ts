@@ -19,3 +19,8 @@ export function isEditableTarget(target: EventTarget | null): boolean {
 export function isModalDialogOpen(): boolean {
   return typeof document !== "undefined" && document.querySelector('[aria-modal="true"]') !== null;
 }
+
+/** True when `target` sits inside `container` (the command dock, rail included). */
+export function isInsideElement(container: Element | null, target: EventTarget | null): boolean {
+  return container !== null && target instanceof Node && container.contains(target);
+}

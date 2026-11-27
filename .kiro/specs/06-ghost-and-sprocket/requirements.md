@@ -57,21 +57,21 @@ Terminology maps to the real codebase: a "card" is a `MemexNode` in the store's 
    | 4 | `trail-active` | trail active | "Press [▶] to begin automated camera walkthrough, or use [Next] to step manually." |
    | 5 | `discoveries-pending` | at least one discovery | "The Ghost found hidden links. Click a ⚡ SYNAPSE badge on the canvas to open the inspector." |
    | 6 | `idle-whisper` | idle for more than 15000 ms | "The archives whisper... tap [⚡ WAKE GHOST ENGINE] to reveal hidden latent connections." |
-   | 7 | `no-trails` | trail count known and 0 | "No trails charted yet. Select two or more cards, then open [📜 TRAILS & REELS] or press [T] and choose [+ BLAZE NEW TRAIL]." |
-   | 8 | `cards-no-trail` | otherwise | "Open [📜 TRAILS & REELS] or press [T] to pick an associative trail and pull up the 1945 Lever." |
+   | 7 | `no-trails` | trail count known and 0 | "No trails charted yet. Select two or more cards, then click the [📜] rail icon or press [T] and choose [+ BLAZE NEW TRAIL]." |
+   | 8 | `cards-no-trail` | otherwise | "Click the [📜] rail icon or press [T] to pick an associative trail and pull up the 1945 Lever." |
 
 4. THE idle time SHALL be strictly greater than `IDLE_THRESHOLD_MS` (15000) to count as idle; NaN and negative values SHALL NOT count.
 5. THE SYSTEM SHALL measure idle time with passive, throttled listeners (pointer, keyboard, wheel, touch) that are removed on unmount *(Spec 07: one shared set, `activity-tracker.ts`, also used by Sprocket's weave prompt)*, and a one-second timer that sets state only when the idle flag flips. Activity SHALL reset the flag at once.
 6. THE beacon SHALL re-render only when one of its primitive inputs changes, so a card drag does not re-render it, and its live region SHALL announce only a change of state.
 7. THE beacon SHALL offer a visible "✕" control (labelled "Hide ghost hints") that collapses it to a "Show ghost hints" button. THE choice SHALL last for the session only and SHALL NOT be persisted.
-8. THE bracketed control names SHALL match the real controls: `[I]` (shortcut), "▶ Auto-Play" / "❚❚ Auto-Play" and "Next ▶" (dock), "⚡ Wake Ghost Engine" (HUD, shown in capitals), "[📜 TRAILS & REELS]" and `[T]` (Curator's Index), "[+ BLAZE NEW TRAIL]" (its form), and Escape (exits playback).
+8. THE bracketed control names SHALL match the real controls: `[I]` (shortcut), "▶ Auto-Play" / "❚❚ Auto-Play" and "Next ▶" (dock), "⚡ Wake Ghost Engine" (HUD, shown in capitals), the `[📜]` rail icon and `[T]` (the Reels & Trails tab of the command dock; Spec 09 replaced the top "[📜 TRAILS & REELS]" button), "[+ BLAZE NEW TRAIL]" (its form), and Escape (exits playback).
 ### Requirement 6: Retro Toasts
 **User Story:** As a researcher, I want playful but clear notices when something does not work, so that mistakes explain themselves.
 #### Acceptance Criteria
 1. THE SYSTEM SHALL show toasts styled with the `#141721` surface, amber `#FFB236` or violet `#B388FF` accents and a monospace label such as "[ SIGNAL // NOTICE ]".
 2. THE SYSTEM SHALL keep at most 3 toasts, remove the oldest when a fourth arrives, and drop a toast whose message equals the newest toast's message.
 3. EACH toast SHALL dismiss itself after 4.5 seconds, SHALL have a "✕" button labelled "Dismiss notice", and SHALL clear its timer when it goes away.
-4. THE container SHALL be a polite live region that stays mounted, SHALL ignore pointer events outside the toasts, SHALL sit above modals, and SHALL move left of the Synapse Inspector drawer while the drawer is open.
+4. THE container SHALL be a polite live region that stays mounted, SHALL ignore pointer events outside the toasts, SHALL sit above modals, and SHALL move left of the command dock rail and of the open dock (Spec 09; it moved left of the Synapse Inspector drawer before).
 5. WHEN the user drops or chooses an empty file, or submits blank or whitespace-only raw text in the Platen modal, THE SYSTEM SHALL show "Even a 1945 vacuum tube cannot decipher blank parchment, Professor. Feed the platen some ink." and SHALL keep the inline error.
 6. WHEN playback arrives at the last stop of a trail from an earlier stop (Next, auto-play or a timeline jump), THE SYSTEM SHALL show "You have arrived at the frontier of human knowledge. Blaze a new trail to proceed." once for that arrival. It SHALL NOT show it when a trail starts, or when the dock re-renders. WHEN the user presses the Right Arrow key on the last stop, THE SYSTEM SHALL show it once per key press (not on key repeat).
 7. WHEN the arXiv input is not a valid identifier (client-side parse fails, and the input is not a DOI) or the resolver answers 400, THE SYSTEM SHALL show "The signal was lost in the ether. Please check your arXiv identifier." and SHALL keep the inline message. THE DOI "not supported yet" message SHALL NOT use this toast. An aborted or cancelled request SHALL NOT show a toast.

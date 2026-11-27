@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useCallback, useState } from "react";
+import { memo, useCallback, useMemo, useState } from "react";
 import {
   BaseEdge,
   EdgeLabelRenderer,
@@ -26,13 +26,16 @@ import {
   type AssociativeEdge,
   type EdgePolarity,
 } from "@/core/types";
-import { DIM_OPACITY, useEdgeTrailState } from "@/store/trail-selectors";
+import { combinedDimOpacity } from "@/core/spotlight";
+import { selectIsSnapEdge } from "@/store/dock-selectors";
+import { selectEdgeSpotlightDim } from "@/store/spotlight-selectors";
+import { useEdgeTrailState } from "@/store/trail-selectors";
 import { useMemexStore, type MemexStore } from "@/store/useMemexStore";
 
 const SPRING = { type: "spring", stiffness: 300, damping: 28 } as const;
 
 const selectSelectGhost = (s: MemexStore) => s.selectGhostDiscovery;
-const selectTogglePolarity = (s: MemexStore) => s.toggleEdgePolarity;
+const selectInspectEdge = (s: MemexStore) => s.inspectEdge;
 
 /**
  * Polarity badges on real edges. Deliberately unlike the ghost "⚡ X% SYNAPSE"
@@ -89,7 +92,13 @@ function AssociativePulseEdgeImpl({
     ),
   );
   const selectGhost = useMemexStore(selectSelectGhost);
-  const togglePolarity = useMemexStore(selectTogglePolarity);
+  const inspectEdge = useMemexStore(selectInspectEdge);
+  // Spotlight (Spec 09): the edge fades when BOTH of its cards are filtered out. A primitive per edge.
+  const spotlightSelector = useMemo(() => selectEdgeSpotlightDim(source, target), [source, target]);
+  const bothDimmed = useMemexStore(spotlightSelector);
+  // The edge a magnetic snap just created pulses once (opacity only; the store clears the id after 1.2 s).
+  const snapSelector = useMemo(() => selectIsSnapEdge(id), [id]);
+  const justSnapped = useMemexStore(snapSelector);
   const sourceNode = useInternalNode(source);
   const targetNode = useInternalNode(target);
 
@@ -130,7 +139,7 @@ function AssociativePulseEdgeImpl({
   const color = polarity === "supports" ? EDGE_COLORS[origin] : POLARITY_COLORS[polarity];
   const refutes = polarity === "refutes";
   const synthesizes = polarity === "synthesizes";
-  const badgeVisible = !isSynapse && (polarity !== "supports" || hovered || selected === true);
+  const badgeVisible = !isSynapse && (polarity !== "supports" || hovered || selected === true || justSnapped);
   const badge = POLARITY_BADGE[polarity];
   const nextWord = POLARITY_BADGE[cyclePolarity(polarity)].word;
   const strength = Math.min(1, Math.max(0, data?.strength ?? 0.5));
@@ -138,6 +147,7 @@ function AssociativePulseEdgeImpl({
   // Stronger associations pulse faster (4.2s down to 1.8s per traverse).
   const pulseSeconds = 4.2 - 2.4 * strength;
   const trailActive = trailState === "active";
+  const edgeOpacity = combinedDimOpacity(trailState, bothDimmed ? "dim" : "off");
   const active = hovered || selected === true || trailActive || synapseSelected;
 
   return (
@@ -146,10 +156,23 @@ function AssociativePulseEdgeImpl({
       onMouseLeave={() => setHovered(false)}
       data-edge-id={id}
       style={{
-        opacity: trailState === "dim" ? DIM_OPACITY : 1,
+        opacity: edgeOpacity,
         transition: "opacity 300ms ease",
       }}
     >
+      {justSnapped ? (
+        <path
+          d={path}
+          fill="none"
+          stroke={EDGE_COLORS.human}
+          strokeWidth={8}
+          strokeLinecap="round"
+          className="memex-snap-pulse"
+          data-snap-pulse=""
+          style={{ opacity: 0.4 }}
+          pointerEvents="none"
+        />
+      ) : null}
       {/* Glow: a wide translucent stroke under the crisp line. Plain strokes
           composite on the GPU, unlike an SVG blur filter. */}
       <path
@@ -211,7 +234,7 @@ function AssociativePulseEdgeImpl({
               transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
               pointerEvents: "none",
               zIndex: 1001,
-              opacity: trailState === "dim" ? DIM_OPACITY : 1,
+              opacity: edgeOpacity,
             }}
           >
             <motion.button
@@ -249,7 +272,7 @@ function AssociativePulseEdgeImpl({
               transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
               pointerEvents: "none",
               zIndex: 1002,
-              opacity: trailState === "dim" ? DIM_OPACITY : 1,
+              opacity: edgeOpacity,
             }}
           >
             <AnimatePresence>
@@ -265,12 +288,12 @@ function AssociativePulseEdgeImpl({
                   transition={SPRING}
                   onClick={(ev) => {
                     ev.stopPropagation();
-                    togglePolarity(id);
+                    inspectEdge(id);
                   }}
                   onMouseEnter={() => setHovered(true)}
                   onMouseLeave={() => setHovered(false)}
-                  aria-label={`Edge polarity: ${badge.word}. Activate to change to ${nextWord}.`}
-                  title={`${badge.word} (click for ${nextWord})`}
+                  aria-label={`Edge polarity: ${badge.word}. Activate to inspect this link and change it to ${nextWord}.`}
+                  title={`${badge.word}. Click to inspect this link (next polarity: ${nextWord})`}
                   data-polarity={polarity}
                   className="cursor-pointer whitespace-nowrap bg-card-surface px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2"
                   style={{

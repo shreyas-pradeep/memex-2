@@ -114,8 +114,8 @@ export function ArchivalTimeline() {
   return (
     <Panel position="bottom-center" className="!mb-4 !mx-0">
       <div
-        className="flex flex-col items-center gap-2"
-        style={{ maxWidth: "min(760px, calc(100vw - 520px))", minWidth: 220 }}
+        className="memex-dock-shift-half flex flex-col items-center gap-2"
+        style={{ maxWidth: "min(760px, calc(100vw - var(--memex-dock-inset, 48px) - 520px))", minWidth: 220 }}
       >
         <AnimatePresence initial={false}>
           {open ? (

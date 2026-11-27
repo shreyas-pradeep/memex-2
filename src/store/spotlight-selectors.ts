@@ -65,6 +65,25 @@ export const selectNodeSpotlightDim =
     return matchNodeMemo({ data }, filters, signature) ? "match" : "dim";
   };
 
+/**
+ * True when the spotlight is active and BOTH endpoints of an edge are filtered
+ * out, so the edge fades with its cards. A primitive: an edge re-renders only
+ * when its own flag flips, never on a drag frame (the memoized match lookup is
+ * keyed by `node.data`, which a drag keeps).
+ */
+export const selectEdgeSpotlightDim =
+  (sourceId: string, targetId: string) =>
+  (s: MemexStore): boolean => {
+    const signature = signatureOf(s);
+    if (signature === INACTIVE_SIGNATURE) return false;
+    const index = dataById(s.nodes);
+    const a = index.get(sourceId);
+    const b = index.get(targetId);
+    if (a === undefined || b === undefined) return false;
+    const filters: SpotlightFilters = { query: s.spotlightQuery, type: s.spotlightType, tags: s.spotlightTags };
+    return !matchNodeMemo({ data: a }, filters, signature) && !matchNodeMemo({ data: b }, filters, signature);
+  };
+
 /** Number of cards that match, or the total when no filter is active (for the "N of M" readout). */
 export const selectSpotlightMatchCount = (s: MemexStore): number => {
   const signature = signatureOf(s);

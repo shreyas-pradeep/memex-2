@@ -230,8 +230,10 @@ describe("Property 1: guidance is always valid and actionable", () => {
   });
 
   it("names only controls that exist in the UI", () => {
-    // The trail picker is the Curator's Index (top button and [T]), not the dock or the old menu.
-    expect(GUIDANCE_TEXT["cards-no-trail"]).toContain("[📜 TRAILS & REELS]");
+    // The trail picker is the Reels & Trails tab of the command dock (Spec 09): the [📜] rail icon and [T].
+    // It replaced the Spec 08 top button "[📜 TRAILS & REELS]", which no longer exists.
+    expect(GUIDANCE_TEXT["cards-no-trail"]).toContain("[📜]");
+    expect(GUIDANCE_TEXT["cards-no-trail"]).not.toContain("TRAILS & REELS");
     expect(GUIDANCE_TEXT["cards-no-trail"]).toContain("[T]");
     expect(GUIDANCE_TEXT["cards-no-trail"]).not.toMatch(/Trails menu/);
     expect(GUIDANCE_TEXT["no-trails"]).toContain("[+ BLAZE NEW TRAIL]");

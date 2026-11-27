@@ -15,7 +15,8 @@ import {
 interface ToastStore {
   toasts: readonly ToastEntry[];
   nextId: number;
-  show: (kind: ToastKind) => void;
+  /** `message` replaces the catalog text (for toasts that name cards or counts). */
+  show: (kind: ToastKind, message?: string) => void;
   dismiss: (id: number) => void;
   /** Removes every toast (used by tests and unmount cleanup). */
   clear: () => void;
@@ -23,9 +24,9 @@ interface ToastStore {
 
 export const useToastStore = create<ToastStore>()((set, get) => ({
   ...EMPTY_TOAST_STATE,
-  show: (kind) => {
+  show: (kind, message) => {
     const { toasts, nextId } = get();
-    const next = pushToast({ toasts, nextId }, kind);
+    const next = pushToast({ toasts, nextId }, kind, message);
     if (next.toasts !== toasts) set({ toasts: next.toasts, nextId: next.nextId });
   },
   dismiss: (id) => {
@@ -37,8 +38,8 @@ export const useToastStore = create<ToastStore>()((set, get) => ({
 }));
 
 /** Shows a retro toast from anywhere (event handlers, effects). */
-export function showToast(kind: ToastKind): void {
-  useToastStore.getState().show(kind);
+export function showToast(kind: ToastKind, message?: string): void {
+  useToastStore.getState().show(kind, message);
 }
 
 export const selectToasts = (s: ToastStore) => s.toasts;

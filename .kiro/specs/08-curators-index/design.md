@@ -1,5 +1,7 @@
 # Technical Design: The Curator's Index
 
+> **Superseded by Spec 09 (UI only).** The left drawer, its top-center trigger and the narrow-screen exclusion described below were replaced by the Reels & Trails tab of the Research Command Dock (`TrailsPanel.tsx` in `src/components/canvas/`) and the rail icon `[📜 (N trails)]`. The store contract, the pure `core/curators-index` rules and the trail card model are unchanged.
+
 ## 1. Architecture Overview
 
 ```mermaid

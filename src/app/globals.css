@@ -238,7 +238,95 @@ body {
   animation: sprocket-step 0.16s ease-in-out infinite alternate-reverse;
 }
 
+/* Command dock coexistence (Spec 09). `--memex-dock-inset` is the width the rail
+   (and the open panel) takes from the right edge; MemexCanvas sets it. Elements
+   anchored on the right shift left by it, and bottom-centred ones by half of it,
+   so nothing sits under the dock. Transform only. */
+.memex-dock-shift {
+  transform: translateX(calc(var(--memex-dock-inset, 48px) * -1));
+  transition: transform 280ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.memex-dock-shift-half {
+  transform: translateX(calc(var(--memex-dock-inset, 48px) * -0.5));
+  transition: transform 280ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Magnetic arc (Spec 09): a marching dash and a 1px jitter, transform and
+   stroke-dashoffset only. No filters. */
+@keyframes memex-arc-march {
+  from {
+    stroke-dashoffset: 0;
+  }
+  to {
+    stroke-dashoffset: -28;
+  }
+}
+@keyframes memex-arc-jitter {
+  0% {
+    transform: translate(0, 0);
+  }
+  25% {
+    transform: translate(1px, -1px);
+  }
+  50% {
+    transform: translate(-1px, 1px);
+  }
+  75% {
+    transform: translate(1px, 1px);
+  }
+  100% {
+    transform: translate(0, 0);
+  }
+}
+.memex-arc-core {
+  stroke-dasharray: 6 8;
+  animation: memex-arc-march 0.6s linear infinite;
+}
+.memex-arc-jitter {
+  animation: memex-arc-jitter 0.09s steps(1, end) infinite;
+}
+
+/* One-time pulse on the edge a magnetic snap just created (opacity only). */
+@keyframes memex-snap-pulse {
+  0% {
+    opacity: 0;
+  }
+  35% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.4;
+  }
+}
+.memex-snap-pulse {
+  animation: memex-snap-pulse 1.2s ease-out 1 both;
+}
+
+/* Dock rail badge for unreviewed discoveries (opacity only). */
+@keyframes memex-rail-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+.memex-rail-pulse {
+  animation: memex-rail-pulse 2.2s ease-in-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .memex-dock-shift,
+  .memex-dock-shift-half {
+    transition: none !important;
+  }
+  .memex-arc-core,
+  .memex-arc-jitter,
+  .memex-snap-pulse,
+  .memex-rail-pulse {
+    animation: none !important;
+  }
   .memex-edge-pulse,
   .memex-edge-pulse-reverse,
   .memex-ghost-pulse,

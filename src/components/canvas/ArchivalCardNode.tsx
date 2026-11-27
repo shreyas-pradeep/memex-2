@@ -3,6 +3,7 @@
 import {
   memo,
   useCallback,
+  useMemo,
   useRef,
   useState,
   type CSSProperties,
@@ -11,9 +12,11 @@ import {
 } from "react";
 import { Handle, NodeResizer, Position, type NodeProps } from "@xyflow/react";
 import { motion, type Variants } from "framer-motion";
+import { combinedDimOpacity } from "@/core/spotlight";
 import { formatEventDate, parseEventDateInput } from "@/core/trail-engine";
 import { EDGE_COLORS, type MemexNode } from "@/core/types";
-import { DIM_OPACITY, useNodeTrailState } from "@/store/trail-selectors";
+import { selectNodeSpotlightDim } from "@/store/spotlight-selectors";
+import { useNodeTrailState } from "@/store/trail-selectors";
 import { useMemexStore, type MemexStore } from "@/store/useMemexStore";
 import { SCANLINES, restShadow, rgba, skinFor } from "./card-skins";
 import { TagInput, withPendingTags } from "./TagInput";
@@ -210,8 +213,16 @@ function ArchivalCardNodeImpl({ id, data, selected }: NodeProps<MemexNode>) {
   const highlighted = useMemexStore(
     useCallback((s: MemexStore) => s.highlightedNodeId === id, [id]),
   );
+  // Spotlight (Spec 09): "off" | "match" | "dim", a primitive, so a drag frame never re-renders the card for it.
+  const spotlightSelector = useMemo(() => selectNodeSpotlightDim(id), [id]);
+  const spotlight = useMemexStore(spotlightSelector);
+  // Magnetic snapping (Spec 09): this card is the card the dragged one would connect to.
+  const magneticTarget = useMemexStore(
+    useCallback((s: MemexStore) => s.magneticTarget?.targetId === id, [id]),
+  );
   const eventLabel = formatEventDate(data);
-  const trailOpacity = trailState === "dim" ? DIM_OPACITY : 1;
+  // The stronger dimmer wins (trail 0.2, spotlight 0.15). Spotlight-dimmed cards stay interactive.
+  const cardOpacity = combinedDimOpacity(trailState, spotlight);
 
   const [isEditing, setIsEditing] = useState(false);
   const [isExiting, setIsExiting] = useState(false);
@@ -301,7 +312,7 @@ function ArchivalCardNodeImpl({ id, data, selected }: NodeProps<MemexNode>) {
       <div
         className="h-full w-full"
         style={{
-          opacity: trailOpacity,
+          opacity: cardOpacity,
           transition: "opacity 300ms ease",
           pointerEvents: trailState === "dim" ? "none" : undefined,
         }}
@@ -358,6 +369,30 @@ function ArchivalCardNodeImpl({ id, data, selected }: NodeProps<MemexNode>) {
             opacity: trailState === "current" ? 1 : trailState === "active" ? 0.55 : 0,
             transition: "opacity 300ms ease",
             boxShadow: `0 0 0 2px ${rgba(accent, 0.95)}, 0 0 34px 4px ${rgba(accent, 0.55)}`,
+          }}
+        />
+        {/* Spotlight match: a thin static ring shown by opacity while a filter is active. */}
+        <span
+          aria-hidden="true"
+          data-spotlight={spotlight}
+          className="pointer-events-none absolute rounded-2xl"
+          style={{
+            ...overlayInset,
+            opacity: spotlight === "match" ? 1 : 0,
+            transition: "opacity 300ms ease",
+            boxShadow: `0 0 0 1px ${rgba(accent, 0.7)}`,
+          }}
+        />
+        {/* Magnetic target: a static violet ring and glow, shown by opacity. */}
+        <span
+          aria-hidden="true"
+          data-magnetic-target={magneticTarget}
+          className="pointer-events-none absolute rounded-2xl"
+          style={{
+            ...overlayInset,
+            opacity: magneticTarget ? 1 : 0,
+            transition: "opacity 150ms ease",
+            boxShadow: `0 0 0 2px ${EDGE_COLORS.ghost}, 0 0 28px 4px ${rgba(EDGE_COLORS.ghost, 0.5)}`,
           }}
         />
         {/* Hover glow: static box-shadow, revealed by an opacity transition. */}

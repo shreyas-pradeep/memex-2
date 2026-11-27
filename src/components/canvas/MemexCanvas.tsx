@@ -1,6 +1,14 @@
 "use client";
 
-import { memo, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+  type CSSProperties,
+} from "react";
 import {
   Background,
   BackgroundVariant,
@@ -32,11 +40,11 @@ import { useMemexStore, type MemexStore } from "@/store/useMemexStore";
 import { loadUserGeminiKey } from "@/store/ai-settings";
 import { useSprocketSession, selectIsWeaving, selectRequestWeave } from "@/store/useSprocketSession";
 import { WEAVE_BUTTON_LABEL, WEAVE_MIN_CARDS, canStartWeave } from "@/core/sprocket-motion";
+import { dockInsets } from "@/core/dock-layout";
+import { selectDockOpen } from "@/store/dock-selectors";
+import { magneticDragMove, magneticDragStart, magneticDragStop } from "@/store/magnetic-drag";
 import { AISettingsModal } from "../ghost/AISettingsModal";
-import { SynapseInspectorDrawer } from "../ghost/SynapseInspectorDrawer";
 import { ArchivalTimeline } from "../trails/ArchivalTimeline";
-import { CuratorsIndexDrawer } from "../trails/CuratorsIndexDrawer";
-import { CuratorsIndexTrigger } from "../trails/CuratorsIndexTrigger";
 import { TrailCameraDirector } from "../trails/TrailCameraDirector";
 import { TrailPlaybackDock } from "../trails/TrailPlaybackDock";
 import { AddCardModal, type NewCardInput } from "./AddCardModal";
@@ -44,9 +52,15 @@ import { BriefingHost } from "./BriefingHost";
 import { ArchivalCardNode } from "./ArchivalCardNode";
 import { IngestionPlatenModal } from "./IngestionPlatenModal";
 import { AssociativePulseEdge } from "./AssociativePulseEdge";
+import { BundleImportDialog } from "./BundleImportDialog";
 import { GhostGuidanceBeacon } from "./GhostGuidanceBeacon";
+import { MagneticArcOverlay } from "./MagneticArcOverlay";
+import { MicroficheCassetteOverlay } from "./MicroficheCassetteOverlay";
+import { ResearchCommandDock } from "./ResearchCommandDock";
 import { RetroToaster } from "./RetroToaster";
 import { SprocketCrawler } from "./SprocketCrawler";
+import { VaultDropZone } from "./VaultDropZone";
+import { VaultMenu } from "./VaultMenu";
 
 // Module-scope so React Flow never sees a new object identity between renders.
 // The graph core types nodes `memexCard` and edges `associative`; the
@@ -322,6 +336,21 @@ function ArchivalHud() {
   );
 }
 
+/** Drag callbacks of React Flow: the dragged node and every node that moves with it. */
+type DragHandler = (event: MouseEvent | TouchEvent, node: MemexNode, dragged: MemexNode[]) => void;
+
+const onNodeDragStart: DragHandler = (_event, node, dragged) => magneticDragStart(node.id, dragged.length);
+const onNodeDrag: DragHandler = (_event, node, dragged) => magneticDragMove(node.id, dragged.length);
+const onNodeDragStop: DragHandler = (_event, node, dragged) => void magneticDragStop(node.id, dragged.length);
+
+/** Clicking a real edge (or a ghost edge) opens it in the Synapse tab of the dock. */
+const onEdgeClick = (_event: unknown, edge: AssociativeEdge): void => {
+  const store = useMemexStore.getState();
+  const discoveryId = edge.data?.discoveryId;
+  if (discoveryId !== undefined) store.selectGhostDiscovery(discoveryId);
+  else store.inspectEdge(edge.id);
+};
+
 const Flow = memo(function Flow() {
   const nodes = useMemexStore(selectNodes);
   const realEdges = useMemexStore(selectEdges);
@@ -336,6 +365,9 @@ const Flow = memo(function Flow() {
   const onEdgesChange = useMemexStore(selectOnEdgesChange);
   const onConnect = useMemexStore(selectOnConnect);
 
+  // A drag that is still tracked when the canvas goes away must not leave a cached session behind.
+  useEffect(() => () => useMemexStore.getState().cancelMagneticDrag(), []);
+
   return (
     <ReactFlow<MemexNode, AssociativeEdge>
       nodes={nodes}
@@ -343,6 +375,10 @@ const Flow = memo(function Flow() {
       onNodesChange={onNodesChange}
       onEdgesChange={onEdgesChange}
       onConnect={onConnect}
+      onNodeDragStart={onNodeDragStart}
+      onNodeDrag={onNodeDrag}
+      onNodeDragStop={onNodeDragStop}
+      onEdgeClick={onEdgeClick}
       nodeTypes={nodeTypes}
       edgeTypes={edgeTypes}
       connectionMode={ConnectionMode.Loose}
@@ -377,12 +413,15 @@ const Flow = memo(function Flow() {
         nodeStrokeColor="transparent"
         nodeBorderRadius={1}
         maskColor="rgba(9, 10, 15, 0.78)"
+        className="memex-dock-shift"
         style={{ background: "#0E1119" }}
         ariaLabel="Archive minimap"
       />
       <Controls showInteractive={false} />
       <ArchivalHud />
-      <CuratorsIndexTrigger />
+      <VaultMenu />
+      <MicroficheCassetteOverlay />
+      <MagneticArcOverlay />
       <TrailCameraDirector />
       <TrailPlaybackDock />
       <ArchivalTimeline />
@@ -390,6 +429,13 @@ const Flow = memo(function Flow() {
     </ReactFlow>
   );
 });
+
+function subscribeToResize(onChange: () => void): () => void {
+  window.addEventListener("resize", onChange);
+  return () => window.removeEventListener("resize", onChange);
+}
+const readViewportWidth = (): number => window.innerWidth;
+const serverViewportWidth = (): number => 1440;
 
 /**
  * Client-only canvas. The store starts from the demo seed on both server and
@@ -399,6 +445,11 @@ const Flow = memo(function Flow() {
  */
 export function MemexCanvas() {
   const hydrated = useMemexStore(selectHydrated);
+  const dockOpen = useMemexStore(selectDockOpen);
+  const viewportWidth = useSyncExternalStore(subscribeToResize, readViewportWidth, serverViewportWidth);
+  // Width the rail (and the open panel on wide screens) takes from the right edge. Right-anchored
+  // elements (minimap, toasts) and bottom-centred ones (timeline, playback dock) shift by it.
+  const { inset } = dockInsets({ open: dockOpen, viewportWidth });
 
   useEffect(() => {
     const { hydrated: done, hydrate } = useMemexStore.getState();
@@ -406,14 +457,25 @@ export function MemexCanvas() {
   }, []);
 
   return (
-    <div style={{ position: "relative", width: "100vw", height: "100vh", background: "#090A0F" }}>
+    <div
+      style={
+        {
+          position: "relative",
+          width: "100vw",
+          height: "100vh",
+          background: "#090A0F",
+          "--memex-dock-inset": `${inset}px`,
+        } as CSSProperties
+      }
+    >
       {hydrated ? (
         <ReactFlowProvider>
           <Flow />
+          <BundleImportDialog />
+          <VaultDropZone />
         </ReactFlowProvider>
       ) : null}
-      {hydrated ? <SynapseInspectorDrawer /> : null}
-      {hydrated ? <CuratorsIndexDrawer /> : null}
+      {hydrated ? <ResearchCommandDock /> : null}
       <BriefingHost />
       <RetroToaster />
     </div>

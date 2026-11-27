@@ -1,5 +1,7 @@
 # Technical Design: The Ghost in the Machine
 
+> **Superseded by Spec 09 (UI only).** The Synapse Inspector drawer described below is the Synapse tab of the Research Command Dock (`SynapsePanel.tsx`); the discovery engine and its store contract are unchanged.
+
 ## 1. Architecture Overview
 Pure discovery logic lives in `src/core/ghost-engine.ts` (no React, no clock, no randomness). The Zustand store owns session state and calls the pure functions. UI reads granular selectors.
 

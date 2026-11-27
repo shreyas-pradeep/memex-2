@@ -4,12 +4,11 @@ import { useEffect } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { TOAST_DURATION_MS, type ToastEntry } from "@/core/sprocket-engine";
 import { selectDismissToast, selectToasts, useToastStore } from "@/store/useToastStore";
-import { useMemexStore, type MemexStore } from "@/store/useMemexStore";
 
 const SPRING = { type: "spring", stiffness: 300, damping: 28 } as const;
 
-// True while the Synapse Inspector drawer (top-right, 360px) is open.
-const selectDrawerOpen = (s: MemexStore) => s.selectedGhostDiscoveryId !== null;
+/** Kinds shown in phantom violet (faults and ghost-made links); the rest are amber. */
+const VIOLET_KINDS: readonly ToastEntry["kind"][] = ["ARXIV_INVALID", "NO_AUTO_TRAIL", "SNAP", "VAULT_ERROR"];
 
 function ToastCard({
   toast,
@@ -27,7 +26,7 @@ function ToastCard({
     return () => clearTimeout(timer);
   }, [id, onDismiss]);
 
-  const violet = toast.kind === "ARXIV_INVALID" || toast.kind === "NO_AUTO_TRAIL";
+  const violet = VIOLET_KINDS.includes(toast.kind);
   const accent = violet ? "#B388FF" : "#FFB236";
   return (
     <motion.div
@@ -62,15 +61,15 @@ function ToastCard({
 
 /**
  * Brass-and-phosphor toast stack, mounted once. Fixed at the top-right (above
- * modals, so a toast raised by the Platen dialog is visible) and moved left of
- * the Synapse Inspector drawer while that is open. The container ignores
- * pointer events; only the toasts take them. Live region: polite.
+ * modals, so a toast raised by the Platen dialog is visible) and shifted left
+ * of the command dock rail (and of the open dock) by `--memex-dock-inset`, a
+ * transform-only move. The container ignores pointer events; only the toasts
+ * take them. Live region: polite.
  */
 export function RetroToaster() {
   const reduce = useReducedMotion() === true;
   const toasts = useToastStore(selectToasts);
   const dismiss = useToastStore(selectDismissToast);
-  const drawerOpen = useMemexStore(selectDrawerOpen);
 
   return (
     <div
@@ -78,11 +77,7 @@ export function RetroToaster() {
       aria-relevant="additions text"
       aria-label="Notices"
       role="region"
-      className={`pointer-events-none fixed z-[2100] flex w-[min(340px,calc(100vw-2rem))] flex-col gap-2 right-4 ${
-        drawerOpen
-          ? "top-4 min-[900px]:right-[calc(min(360px,100vw-2rem)+2rem)] min-[900px]:top-24"
-          : "top-4"
-      }`}
+      className="memex-dock-shift pointer-events-none fixed top-4 right-4 z-[2100] flex w-[min(340px,calc(100vw-2rem))] flex-col gap-2"
     >
       <AnimatePresence initial={false}>
         {toasts.map((t) => (
