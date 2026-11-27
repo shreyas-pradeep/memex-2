@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
-import { IDLE_THRESHOLD_MS, getGuidanceMessage, isIdle } from "@/core/sprocket-engine";
+import { IDLE_THRESHOLD_MS, getGuidanceMessage } from "@/core/sprocket-engine";
 import { selectIsGhostScanning } from "@/store/ghost-selectors";
 import { useMemexStore, type MemexStore } from "@/store/useMemexStore";
+import { useIdleFlag } from "./activity-tracker";
 
 const VIOLET = "#B388FF";
 const OBSIDIAN = "#090A0F";
@@ -16,49 +17,6 @@ const selectTrailCount = (s: MemexStore) => s.trails?.length ?? 0;
 const selectDiscoveryCount = (s: MemexStore) => s.ghostDiscoveries?.length ?? 0;
 const selectActiveTrailId = (s: MemexStore) => s.activeTrailId;
 const selectIsPlayingAuto = (s: MemexStore) => s.isPlayingAuto;
-
-/** Pointer, keyboard and scroll activity that counts as "the user is here". */
-const ACTIVITY_EVENTS = ["pointermove", "pointerdown", "keydown", "wheel", "touchstart"] as const;
-/** Ignore activity bursts closer together than this (ms) while the user is active. */
-const ACTIVITY_THROTTLE_MS = 250;
-const IDLE_CHECK_MS = 1000;
-
-/**
- * True once the user has been inactive for more than `IDLE_THRESHOLD_MS`.
- * Listeners are passive and throttled, the clock lives in plain variables, and
- * state is set only when the flag flips, so nothing re-renders per event.
- */
-function useIdleFlag(): boolean {
-  const [idle, setIdle] = useState(false);
-  useEffect(() => {
-    let lastActivity = Date.now();
-    let idleNow = false;
-    const onActivity = () => {
-      const now = Date.now();
-      if (!idleNow && now - lastActivity < ACTIVITY_THROTTLE_MS) return;
-      lastActivity = now;
-      if (idleNow) {
-        idleNow = false;
-        setIdle(false);
-      }
-    };
-    const timer = setInterval(() => {
-      const next = isIdle(Date.now() - lastActivity);
-      if (next !== idleNow) {
-        idleNow = next;
-        setIdle(next);
-      }
-    }, IDLE_CHECK_MS);
-    // Capture phase: React Flow stops propagation of some pointer events.
-    const options: AddEventListenerOptions = { passive: true, capture: true };
-    for (const type of ACTIVITY_EVENTS) window.addEventListener(type, onActivity, options);
-    return () => {
-      clearInterval(timer);
-      for (const type of ACTIVITY_EVENTS) window.removeEventListener(type, onActivity, options);
-    };
-  }, []);
-  return idle;
-}
 
 /** A pulsing phosphor eye wrapped in slow violet mist (radial gradients, opacity and transform only). */
 function PhosphorEyeMist({ still }: { still: boolean }) {

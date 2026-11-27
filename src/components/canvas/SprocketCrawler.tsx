@@ -1,13 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ViewportPortal, useViewportStore, type ViewportStore } from "@xyflow/react";
+import { ViewportPortal, useReactFlow, useViewportStore, type ViewportStore } from "@xyflow/react";
 import {
   AnimatePresence,
   animate,
   motion,
   useMotionValue,
   useReducedMotion,
+  useTransform,
+  type AnimationPlaybackControls,
   type MotionValue,
   type Variants,
 } from "framer-motion";
@@ -16,25 +18,67 @@ import {
   SPROCKET_ALERT_MS,
   SPROCKET_BUBBLE_MS,
   SPROCKET_INSPECT_MS,
-  SPROCKET_SCURRY_MS,
   SPROCKET_SIZE,
   advanceQuipIndex,
   findWireDirection,
   getEdgeMidpoint,
   getPerchPosition,
-  getTraversalPoint,
+  getTraversalPoint as travelPoint,
   pickInspectionTarget,
   resolveCardRect,
   selectSprocketQuip,
   type Point,
   type Rect,
 } from "@/core/sprocket-engine";
+import {
+  CELEBRATE_MS,
+  CURSOR_NEAR_HYSTERESIS_PX,
+  CURSOR_NEAR_PX,
+  FILAMENT_FADE_MS,
+  INITIAL_SPROCKET_MACHINE,
+  PUPIL_MAX_RADIUS,
+  SCURRY_FLIGHT_MS,
+  SPROCKET_PHYSICS,
+  WAG,
+  WEAVE_ABORTED_TEXT,
+  WEAVE_BUBBLE_MS,
+  WEAVE_BUTTON_LABEL,
+  WEAVE_CANCELLED_TEXT,
+  WEAVE_DWELL_MS,
+  WEAVE_LEG_FLIGHT_MS,
+  WEAVE_PROMPT_MS,
+  WEAVE_PROMPT_TEXT,
+  WEAVE_REDUCED_STEP_MS,
+  arcFractionAt,
+  isCursorNear,
+  legPointAt,
+  planWeave,
+  pointDistance,
+  polylinePath,
+  pupilOffset,
+  pupilToSprite,
+  rectsSignature,
+  reduceSprocket,
+  shouldShowWeavePrompt,
+  sparkBurst,
+  weaveDoneText,
+  weaveProgressText,
+  type SprocketEvent,
+  type SprocketMachine,
+  type WeaveLeg,
+} from "@/core/sprocket-motion";
+import { chooseWeaveTrail, generateAutoTrails } from "@/core/trail-genesis";
 import type { GhostDiscovery } from "@/core/types";
 import { selectIsGhostScanning } from "@/store/ghost-selectors";
 import { DEFAULT_CARD_SIZE, useMemexStore, type MemexStore } from "@/store/useMemexStore";
+import { useSprocketSession } from "@/store/useSprocketSession";
+import { showToast } from "@/store/useToastStore";
+import { getSharedTracker, useIdleFlag } from "./activity-tracker";
 
 const SPRING = { type: "spring", stiffness: 300, damping: 28 } as const;
-const SCURRY_S = SPROCKET_SCURRY_MS / 1000;
+/** The stretch eases in quickly at lift-off. */
+const STRETCH_MS = 120;
+const POINTER_OPTIONS: AddEventListenerOptions = { passive: true };
 
 // Palette: obsidian, amber and phantom violet, plus the brass of the chassis.
 const BRASS = "#D97706";
@@ -45,7 +89,8 @@ const OBSIDIAN = "#090A0F";
 const SURFACE = "#141721";
 const PARCHMENT = "#F4F1EA";
 
-type SprocketMode = "perched" | "scurrying" | "alert" | "inspecting";
+type SprocketMode = "perched" | "poised" | "scurrying" | "alert" | "inspecting" | "celebrating";
+type WeaveResult = "completed" | "cancelled" | "aborted";
 
 // ---------------------------------------------------------------------------
 // Selectors (module scope, primitive results: the component re-renders only
@@ -100,22 +145,50 @@ function idsKey(s: MemexStore): string {
   return s.nodes.map((n) => n.id).join("|");
 }
 
+function rectMap(ids: readonly string[]): Map<string, Rect> {
+  const map = new Map<string, Rect>();
+  for (const id of ids) {
+    const rect = rectOf(id);
+    if (rect) map.set(id, rect);
+  }
+  return map;
+}
+
 // ---------------------------------------------------------------------------
 // Imperative choreography (no React state per frame: it writes motion values)
 // ---------------------------------------------------------------------------
 
 interface Activity {
-  kind: "traverse" | "relocate" | "reaction";
-  stop: () => void;
+  kind: "move" | "reaction" | "weave";
+  /** Everything to undo when the activity stops: timers and running animations. */
+  clears: Array<() => void>;
   discoveryId?: string;
   cardIds?: readonly string[];
+}
+
+/** One run of the weaving show, as the controller needs it. */
+interface WeaveRun {
+  legs: readonly WeaveLeg[];
+  stopIds: readonly string[];
+  signature: string;
+  trailId: string;
+  /** Filament reveal: leg index plus the fraction of that leg already drawn. */
+  progress: MotionValue<number>;
+  /** Sprocket has reached stop `n` (1-based). */
+  onStop: (n: number) => void;
+  onCelebrate: () => void;
+  onFinish: (result: WeaveResult) => void;
 }
 
 interface ControllerDeps {
   x: MotionValue<number>;
   y: MotionValue<number>;
   opacity: MotionValue<number>;
+  /** Squash and stretch, anchored at the feet. */
+  scaleX: MotionValue<number>;
+  scaleY: MotionValue<number>;
   setMode: (mode: SprocketMode) => void;
+  onHappy: (happy: boolean) => void;
   isReduced: () => boolean;
 }
 
@@ -132,25 +205,44 @@ interface Controller {
   react: (discovery: GhostDiscovery) => void;
   /** Keeps Sprocket on its perch while the card is dragged (ignored mid-activity). */
   follow: () => void;
-  /** Cancels a reaction whose cards or synapse no longer exist. */
+  /** Cancels a reaction or weave whose cards or synapse no longer exist. */
   validate: () => void;
+  /** Runs the weaving show. False when one is already running. */
+  weave: (run: WeaveRun) => boolean;
+  /** Stops a running weave (not the celebration) and returns to the perch. */
+  cancelWeave: (result: "cancelled" | "aborted") => boolean;
+  isWeaving: () => boolean;
+  /** The cursor came near (or left): the orthogonal "happy" overlay. */
+  setHappy: (happy: boolean) => void;
   dispose: () => void;
 }
 
 function createController(deps: ControllerDeps): Controller {
+  const physics = SPROCKET_PHYSICS;
   let current: Activity | null = null;
+  let machine: SprocketMachine = INITIAL_SPROCKET_MACHINE;
+  let weaveRun: WeaveRun | null = null;
+  let scaleControls: AnimationPlaybackControls[] = [];
   // The motion values already hold the perch when a card existed at mount
   // (see `initialPerch`), so a controller created later starts out placed.
   let placed = perchOf(selectPerchId(useMemexStore.getState())) !== null;
   let disposed = false;
+
+  /** Applies an event to the state machine. Illegal transitions are ignored (false). */
+  const dispatch = (event: SprocketEvent): boolean => {
+    const next = reduceSprocket(machine, event);
+    if (next === machine) return false;
+    machine = next;
+    return true;
+  };
+  const busyWeaving = () => machine.state === "weaving" || machine.state === "celebrating";
 
   const setPoint = (p: Point) => {
     deps.x.set(p.x);
     deps.y.set(p.y);
   };
   const currentPoint = (): Point => ({ x: deps.x.get(), y: deps.y.get() });
-  const currentPerch = (): Point | null =>
-    perchOf(selectPerchId(useMemexStore.getState()));
+  const currentPerch = (): Point | null => perchOf(selectPerchId(useMemexStore.getState()));
 
   /** Reduced motion: no travel, a quick fade in at the new spot. */
   const jump = (p: Point) => {
@@ -159,26 +251,89 @@ function createController(deps: ControllerDeps): Controller {
     animate(deps.opacity, 1, { duration: 0.2 });
   };
 
+  // --- squash and stretch (skipped entirely under reduced motion) ---------
+  const stopScale = () => {
+    for (const c of scaleControls) c.stop();
+    scaleControls = [];
+  };
+  const restScale = () => {
+    stopScale();
+    deps.scaleX.set(physics.rest.scaleX);
+    deps.scaleY.set(physics.rest.scaleY);
+  };
+  const scaleTo = (scaleX: number, scaleY: number, ms: number) => {
+    if (deps.isReduced()) return;
+    stopScale();
+    const options = { duration: ms / 1000, ease: "easeOut" as const };
+    scaleControls = [animate(deps.scaleX, scaleX, options), animate(deps.scaleY, scaleY, options)];
+  };
+  /** Impact squash, then a spring back to 1.0. `onSettled` runs when the spring rests. */
+  const land = (onSettled?: () => void) => {
+    if (deps.isReduced()) {
+      onSettled?.();
+      return;
+    }
+    stopScale();
+    deps.scaleX.set(physics.landing.scaleX);
+    deps.scaleY.set(physics.landing.scaleY);
+    scaleControls = [
+      animate(deps.scaleX, physics.rest.scaleX, physics.landing.spring),
+      animate(deps.scaleY, physics.rest.scaleY, { ...physics.landing.spring, onComplete: onSettled }),
+    ];
+  };
+
   const stop = () => {
     const a = current;
     current = null;
-    a?.stop();
+    if (a) {
+      for (const c of a.clears) c();
+      a.clears.length = 0;
+    }
+    stopScale();
+  };
+
+  /** Stops the running activity and returns the machine to idle. */
+  const interrupt = () => {
+    stop();
+    dispatch("INTERRUPT");
   };
 
   const settle = () => {
     current = null;
+    dispatch("SETTLE");
+    dispatch("INTERRUPT");
+    restScale();
     if (disposed) return;
     deps.setMode("perched");
     const home = currentPerch();
     if (home) setPoint(home);
   };
 
-  /** Runs `onFrame(k)` for k from 0 to 1 and calls `onDone` at the end. Returns a stop function. */
-  const tween = (
-    options: { spring?: boolean; onFrame: (k: number) => void; onDone: () => void },
-  ): (() => void) => {
+  /** Ends an activity where Sprocket stands (no snap to the perch). */
+  const settleInPlace = () => {
+    current = null;
+    dispatch("SETTLE");
+    dispatch("INTERRUPT");
+    restScale();
+    if (!disposed) deps.setMode("perched");
+  };
+
+  const begin = (kind: Activity["kind"], extra: Partial<Activity> = {}): Activity => {
+    const act: Activity = { kind, clears: [], ...extra };
+    current = act;
+    return act;
+  };
+
+  const tween = (options: {
+    ms?: number;
+    spring?: boolean;
+    onFrame: (k: number) => void;
+    onDone: () => void;
+  }): (() => void) => {
     const controls = animate(0, 1, {
-      ...(options.spring ? SPRING : { duration: SCURRY_S, ease: "easeInOut" as const }),
+      ...(options.spring
+        ? SPRING
+        : { duration: (options.ms ?? SCURRY_FLIGHT_MS) / 1000, ease: "easeInOut" as const }),
       onUpdate: options.onFrame,
       onComplete: options.onDone,
     });
@@ -190,9 +345,85 @@ function createController(deps: ControllerDeps): Controller {
     return () => clearTimeout(id);
   };
 
+  /**
+   * One move: 150 ms wind-up (squat and widen), the flight (stretched tall and
+   * thin) and the arrival. A trail-follow move takes 800 ms in all, the length
+   * of the camera glide. Calls `onArrive` at touchdown, after the impact squash
+   * has started.
+   */
+  const sequence = (
+    act: Activity,
+    o: { flightMs?: number; spring?: boolean; onFrame: (k: number) => void; onArrive: () => void },
+  ) => {
+    dispatch("MOVE");
+    deps.setMode("poised");
+    scaleTo(physics.anticipation.scaleX, physics.anticipation.scaleY, physics.anticipation.durationMs);
+    act.clears.push(
+      later(physics.anticipation.durationMs, () => {
+        if (current !== act) return;
+        dispatch("LIFTOFF");
+        deps.setMode("scurrying");
+        scaleTo(physics.flight.scaleX, physics.flight.scaleY, STRETCH_MS);
+        act.clears.push(
+          tween({
+            ms: o.flightMs,
+            spring: o.spring,
+            onFrame: o.onFrame,
+            onDone: () => {
+              if (current !== act) return;
+              dispatch("TOUCHDOWN");
+              deps.setMode("poised");
+              o.onArrive();
+            },
+          }),
+        );
+      }),
+    );
+  };
+
+  /** Lands, then settles on the perch once the rebound has rested. */
+  const arriveAndSettle = (act: Activity) => {
+    land(() => {
+      if (current === act) settle();
+    });
+  };
+
+  function controllerRelocate(): void {
+    if (busyWeaving()) return;
+    interrupt();
+    const target = currentPerch();
+    if (!target) return;
+    if (!placed || deps.isReduced()) {
+      deps.setMode("perched");
+      if (!placed) setPoint(target);
+      else jump(target);
+      placed = true;
+      return;
+    }
+    const start = currentPoint();
+    const act = begin("move");
+    sequence(act, {
+      spring: true,
+      onFrame: (k) => setPoint(mix(start, currentPerch() ?? target, k)),
+      onArrive: () => arriveAndSettle(act),
+    });
+  }
+
+  const cancelWeave = (result: "cancelled" | "aborted"): boolean => {
+    if (machine.state !== "weaving") return false;
+    const run = weaveRun;
+    weaveRun = null;
+    interrupt();
+    restScale();
+    deps.setMode("perched");
+    run?.onFinish(result);
+    controllerRelocate();
+    return true;
+  };
+
   return {
     place: () => {
-      stop();
+      interrupt();
       deps.setMode("perched");
       const home = currentPerch();
       if (home) setPoint(home);
@@ -200,13 +431,14 @@ function createController(deps: ControllerDeps): Controller {
     },
 
     reset: () => {
-      stop();
+      if (!cancelWeave("aborted")) interrupt();
       placed = false;
       deps.setMode("perched");
     },
 
     traverse: (fromId, toId) => {
-      stop();
+      if (busyWeaving()) return;
+      interrupt();
       const from = rectOf(fromId);
       const to = rectOf(toId);
       if (!from || !to) {
@@ -220,32 +452,25 @@ function createController(deps: ControllerDeps): Controller {
       }
       // The stored edge may run either way; the wire is the same line.
       const direction = findWireDirection(useMemexStore.getState().edges, fromId, toId);
-      const act: Activity = { kind: "traverse", stop: () => undefined };
-      current = act;
-      deps.setMode("scurrying");
-      act.stop = tween({
-        onFrame: (k) => setPoint(getTraversalPoint(rectOf(fromId) ?? from, rectOf(toId) ?? to, k, direction)),
-        onDone: () => {
-          if (current === act) settle();
-        },
+      const act = begin("move");
+      sequence(act, {
+        onFrame: (k) => setPoint(travelPoint(rectOf(fromId) ?? from, rectOf(toId) ?? to, k, direction)),
+        onArrive: () => arriveAndSettle(act),
       });
     },
 
     relocate: () => controllerRelocate(),
 
     react: (discovery) => {
+      if (busyWeaving()) return;
       const source = rectOf(discovery.sourceId);
       const target = rectOf(discovery.targetId);
       if (!source || !target) return;
-      stop();
-      const clears: Array<() => void> = [];
-      const act: Activity = {
-        kind: "reaction",
-        stop: () => clears.forEach((c) => c()),
+      interrupt();
+      const act = begin("reaction", {
         discoveryId: discovery.id,
         cardIds: [discovery.sourceId, discovery.targetId],
-      };
-      current = act;
+      });
       const midpoint = (): Point => {
         const a = rectOf(discovery.sourceId);
         const b = rectOf(discovery.targetId);
@@ -258,39 +483,37 @@ function createController(deps: ControllerDeps): Controller {
           return;
         }
         const start = currentPoint();
-        deps.setMode("scurrying");
-        clears.push(
-          tween({
-            onFrame: (k) => setPoint(mix(start, currentPerch() ?? start, k)),
-            onDone: () => {
-              if (current === act) settle();
-            },
-          }),
-        );
+        sequence(act, {
+          onFrame: (k) => setPoint(mix(start, currentPerch() ?? start, k)),
+          onArrive: () => arriveAndSettle(act),
+        });
       };
       const arrive = () => {
         if (current !== act) return;
+        // Landing squash plays while Sprocket starts to inspect.
+        dispatch("INSPECT");
         deps.setMode("inspecting");
-        clears.push(later(SPROCKET_INSPECT_MS, goBack));
+        land();
+        act.clears.push(later(SPROCKET_INSPECT_MS, goBack));
       };
       const goToSynapse = () => {
         if (current !== act) return;
         if (deps.isReduced()) {
           jump(midpoint());
+          dispatch("MOVE");
+          dispatch("LIFTOFF");
+          dispatch("TOUCHDOWN");
           arrive();
           return;
         }
         const start = currentPoint();
-        deps.setMode("scurrying");
-        clears.push(
-          tween({
-            onFrame: (k) => setPoint(mix(start, midpoint(), k)),
-            onDone: arrive,
-          }),
-        );
+        sequence(act, {
+          onFrame: (k) => setPoint(mix(start, midpoint(), k)),
+          onArrive: arrive,
+        });
       };
       deps.setMode("alert");
-      clears.push(later(SPROCKET_ALERT_MS, goToSynapse));
+      act.clears.push(later(SPROCKET_ALERT_MS, goToSynapse));
     },
 
     follow: () => {
@@ -301,8 +524,20 @@ function createController(deps: ControllerDeps): Controller {
 
     validate: () => {
       const a = current;
-      if (a === null || a.kind !== "reaction") return;
+      if (a === null) return;
       const s = useMemexStore.getState();
+      if (a.kind === "weave") {
+        const run = weaveRun;
+        if (run === null || machine.state !== "weaving") return;
+        const trail = s.trails.find((t) => t.id === run.trailId);
+        const intact =
+          trail !== undefined &&
+          run.stopIds.every((id) => s.nodes.some((n) => n.id === id)) &&
+          rectsSignature(run.stopIds, rectMap(run.stopIds)) === run.signature;
+        if (!intact) cancelWeave("aborted");
+        return;
+      }
+      if (a.kind !== "reaction") return;
       const cardsExist = (a.cardIds ?? []).every((id) => s.nodes.some((n) => n.id === id));
       const synapseExists = s.ghostDiscoveries.some((g) => g.id === a.discoveryId);
       if (cardsExist && synapseExists) return;
@@ -310,35 +545,97 @@ function createController(deps: ControllerDeps): Controller {
       settle();
     },
 
+    weave: (run) => {
+      if (busyWeaving() || run.legs.length === 0) return false;
+      interrupt();
+      dispatch("WEAVE");
+      weaveRun = run;
+      const act = begin("weave");
+      const reduced = deps.isReduced();
+      const total = run.legs.length;
+
+      const finish = () => {
+        if (current !== act) return;
+        dispatch("CELEBRATE");
+        deps.setMode("celebrating");
+        restScale();
+        run.onCelebrate();
+        act.clears.push(
+          later(reduced ? 300 : CELEBRATE_MS, () => {
+            if (current !== act) return;
+            weaveRun = null;
+            settleInPlace();
+            run.onFinish("completed");
+            controllerRelocate();
+          }),
+        );
+      };
+
+      const runLeg = (i: number) => {
+        if (current !== act) return;
+        if (i >= total) return finish();
+        const leg = run.legs[i];
+        const end = leg.points[leg.points.length - 1];
+        if (reduced) {
+          jump(end);
+          run.progress.set(i + 1);
+          run.onStop(i + 2);
+          act.clears.push(later(WEAVE_REDUCED_STEP_MS, () => runLeg(i + 1)));
+          return;
+        }
+        // Wind-up, flight along the filament (stretched), landing squash, short dwell.
+        sequence(act, {
+          flightMs: WEAVE_LEG_FLIGHT_MS,
+          onFrame: (k) => {
+            setPoint(legPointAt(leg, k));
+            run.progress.set(i + arcFractionAt(leg, k));
+          },
+          onArrive: () => {
+            setPoint(end);
+            run.progress.set(i + 1);
+            land();
+            run.onStop(i + 2);
+            act.clears.push(later(WEAVE_DWELL_MS, () => runLeg(i + 1)));
+          },
+        });
+      };
+
+      // First get to the first stop (800 ms in all, as long as the camera fit).
+      const first = run.legs[0].points[0];
+      const from = currentPoint();
+      if (reduced) {
+        jump(first);
+        act.clears.push(later(WEAVE_REDUCED_STEP_MS, () => runLeg(0)));
+      } else if (pointDistance(from, first) > 2) {
+        sequence(act, {
+          onFrame: (k) => setPoint(mix(from, first, k)),
+          onArrive: () => {
+            setPoint(first);
+            land();
+            act.clears.push(later(WEAVE_DWELL_MS, () => runLeg(0)));
+          },
+        });
+      } else {
+        runLeg(0);
+      }
+      return true;
+    },
+
+    cancelWeave,
+
+    isWeaving: () => machine.state === "weaving",
+
+    setHappy: (happy) => {
+      if (dispatch(happy ? "HAPPY_ON" : "HAPPY_OFF")) deps.onHappy(happy);
+    },
+
     dispose: () => {
       disposed = true;
-      stop();
+      weaveRun = null;
+      interrupt();
+      restScale();
     },
   };
-
-  function controllerRelocate(): void {
-    stop();
-    const target = currentPerch();
-    if (!target) return;
-    if (!placed || deps.isReduced()) {
-      deps.setMode("perched");
-      if (!placed) setPoint(target);
-      else jump(target);
-      placed = true;
-      return;
-    }
-    const start = currentPoint();
-    const act: Activity = { kind: "relocate", stop: () => undefined };
-    current = act;
-    deps.setMode("scurrying");
-    act.stop = tween({
-      spring: true,
-      onFrame: (k) => setPoint(mix(start, currentPerch() ?? target, k)),
-      onDone: () => {
-        if (current === act) settle();
-      },
-    });
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -352,8 +649,10 @@ const BODY_VARIANTS: Variants = {
     rotate: 0,
     transition: { y: { duration: 2.6, repeat: Infinity, ease: "easeInOut" }, rotate: { duration: 0.2 } },
   },
+  poised: { y: 0, rotate: 0, transition: { duration: 0.1 } },
   scurrying: { y: 0, rotate: 0, transition: { duration: 0.15 } },
   alert: { y: 0, rotate: 0, transition: { duration: 0.15 } },
+  celebrating: { y: 0, rotate: 0, transition: { duration: 0.1 } },
   inspecting: {
     y: 0,
     rotate: [0, -16, 14, -16, 14, 0],
@@ -362,12 +661,33 @@ const BODY_VARIANTS: Variants = {
 };
 const STATIC_BODY_VARIANTS: Variants = {
   perched: { y: 0, rotate: 0 },
+  poised: { y: 0, rotate: 0 },
   scurrying: { y: 0, rotate: 0 },
   alert: { y: 0, rotate: 0 },
+  celebrating: { y: 0, rotate: 0 },
   inspecting: { y: 0, rotate: 0 },
 };
 
-function SprocketSprite({ awake, moving, still }: { awake: boolean; moving: boolean; still: boolean }) {
+interface EyeMotion {
+  /** Pupil offset in sprite units, written by the pointer tracker. */
+  pupilX: MotionValue<number>;
+  pupilY: MotionValue<number>;
+  /** 0 = open eye, 1 = happy arch. */
+  happy: MotionValue<number>;
+}
+
+function SprocketSprite({
+  awake,
+  moving,
+  still,
+  eye,
+}: {
+  awake: boolean;
+  moving: boolean;
+  still: boolean;
+  eye: EyeMotion;
+}) {
+  const open = useTransform(eye.happy, (v) => 1 - v);
   return (
     <svg
       aria-hidden="true"
@@ -407,7 +727,7 @@ function SprocketSprite({ awake, moving, still }: { awake: boolean; moving: bool
       <rect x="2.5" y="8" width="19" height="9" rx="4.2" fill="url(#sprocket-brass)" stroke={OBSIDIAN} strokeWidth="1" />
       <circle cx="6.5" cy="12.5" r="0.8" fill={BRASS_DARK} />
       <circle cx="9.5" cy="12.5" r="0.8" fill={BRASS_DARK} />
-      {/* Eye socket, soft glow ring and the two eye colors (cross-faded by opacity). */}
+      {/* Eye socket and soft glow ring. */}
       <circle cx="16" cy="12.5" r="3.6" fill={OBSIDIAN} />
       <motion.circle
         cx="16"
@@ -418,24 +738,50 @@ function SprocketSprite({ awake, moving, still }: { awake: boolean; moving: bool
         animate={still ? { opacity: 0.28 } : { opacity: [0.18, 0.42, 0.18] }}
         transition={still ? { duration: 0 } : { duration: 2.2, repeat: Infinity, ease: "easeInOut" }}
       />
-      <motion.circle
-        cx="16"
-        cy="12.5"
-        r="2.1"
-        fill={AMBER}
-        initial={false}
-        animate={{ opacity: awake ? 0 : 1 }}
-        transition={{ duration: 0.25 }}
-      />
-      <motion.circle
-        cx="16"
-        cy="12.5"
-        r="2.1"
-        fill={VIOLET}
-        initial={false}
-        animate={{ opacity: awake ? 1 : 0 }}
-        transition={{ duration: 0.25 }}
-      />
+      {/* Open eye: the phosphor pupil follows the cursor (offset written by the tracker, no re-render). */}
+      <motion.g style={{ x: eye.pupilX, y: eye.pupilY, opacity: open }}>
+        <motion.circle
+          cx="16"
+          cy="12.5"
+          r="2.1"
+          fill={AMBER}
+          initial={false}
+          animate={{ opacity: awake ? 0 : 1 }}
+          transition={{ duration: 0.25 }}
+        />
+        <motion.circle
+          cx="16"
+          cy="12.5"
+          r="2.1"
+          fill={VIOLET}
+          initial={false}
+          animate={{ opacity: awake ? 1 : 0 }}
+          transition={{ duration: 0.25 }}
+        />
+      </motion.g>
+      {/* Happy eye: a curved arch, cross-faded in by opacity (no filters, no path morph math). */}
+      <motion.g style={{ opacity: eye.happy }}>
+        <motion.path
+          d="M13.4 13.9 Q16 9.7 18.6 13.9"
+          fill="none"
+          stroke={AMBER}
+          strokeWidth="1.6"
+          strokeLinecap="round"
+          initial={false}
+          animate={{ opacity: awake ? 0 : 1 }}
+          transition={{ duration: 0.25 }}
+        />
+        <motion.path
+          d="M13.4 13.9 Q16 9.7 18.6 13.9"
+          fill="none"
+          stroke={VIOLET}
+          strokeWidth="1.6"
+          strokeLinecap="round"
+          initial={false}
+          animate={{ opacity: awake ? 1 : 0 }}
+          transition={{ duration: 0.25 }}
+        />
+      </motion.g>
     </svg>
   );
 }
@@ -477,14 +823,85 @@ function SteamPuff({ still }: { still: boolean }) {
   );
 }
 
+/** Celebration: brass sparks burst outward from the chassis (transform and opacity only). */
+function SparkBurst() {
+  const sparks = sparkBurst();
+  return (
+    <svg
+      aria-hidden="true"
+      focusable="false"
+      width={SPROCKET_SIZE}
+      height={SPROCKET_SIZE}
+      viewBox="0 0 24 24"
+      style={{ position: "absolute", left: 0, top: 0, overflow: "visible", pointerEvents: "none" }}
+    >
+      {sparks.map((s, i) => {
+        const rad = (s.angleDeg * Math.PI) / 180;
+        return (
+          <motion.circle
+            key={i}
+            cx={12}
+            cy={11}
+            r={s.radius}
+            fill={s.color}
+            initial={{ opacity: 1, x: 0, y: 0, scale: 1 }}
+            animate={{
+              opacity: [1, 1, 0],
+              x: Math.cos(rad) * s.distance,
+              y: Math.sin(rad) * s.distance,
+              scale: 0.4,
+            }}
+            transition={{ duration: 0.7, delay: s.delay, ease: "easeOut" }}
+            style={{ originX: "50%", originY: "50%", transformBox: "fill-box" }}
+          />
+        );
+      })}
+    </svg>
+  );
+}
+
+/**
+ * One leg of the illuminated pulse filament: a wide amber underlayer, a violet
+ * glow and a crisp violet core, revealed by `pathLength` as Sprocket walks it.
+ * Plain strokes only (no SVG filters).
+ */
+function FilamentLeg({
+  leg,
+  index,
+  progress,
+}: {
+  leg: WeaveLeg;
+  index: number;
+  progress: MotionValue<number>;
+}) {
+  const d = polylinePath(leg.points);
+  const length = useTransform(progress, (v) => Math.min(1, Math.max(0, v - index)));
+  const visible = useTransform(progress, (v) => (v - index > 0 ? 1 : 0));
+  return (
+    <motion.g style={{ opacity: visible }}>
+      <motion.path d={d} fill="none" stroke={AMBER} strokeOpacity={0.16} strokeWidth={11} strokeLinecap="round" strokeLinejoin="round" style={{ pathLength: length }} />
+      <motion.path d={d} fill="none" stroke={VIOLET} strokeOpacity={0.32} strokeWidth={6} strokeLinecap="round" strokeLinejoin="round" style={{ pathLength: length }} />
+      <motion.path d={d} fill="none" stroke={VIOLET} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ pathLength: length }} />
+    </motion.g>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
+interface BubbleState {
+  key: number;
+  text: string;
+  /** The idle prompt: shows the auto-weave button and takes pointer events. */
+  action: boolean;
+}
+
 /**
  * Sprocket, the microfilm crawler. Lives in flow coordinates (a ViewportPortal
- * child), so it pans and zooms with the cards. Positions are written to motion
- * values, never React state, so scurrying causes no re-renders.
+ * child), so it pans and zooms with the cards. Positions, squash and stretch,
+ * the pupil and the filament are written to motion values, never React state,
+ * so scurrying, eye tracking and weaving cause no re-renders per frame.
  */
 export function SprocketCrawler() {
   const reduce = useReducedMotion() === true;
@@ -493,12 +910,18 @@ export function SprocketCrawler() {
   const activeTrailIndex = useMemexStore(selectActiveTrailIndex);
   const scanning = useMemexStore(selectIsGhostScanning);
   const scale = useViewportStore(selectZoomScale);
+  const idle = useIdleFlag();
+  const { fitView } = useReactFlow();
 
   const [mode, setMode] = useState<SprocketMode>("perched");
   const [afterglow, setAfterglow] = useState(false);
-  const [bubble, setBubble] = useState<{ key: number; text: string } | null>(null);
+  const [bubble, setBubble] = useState<BubbleState | null>(null);
   const [clicks, setClicks] = useState(0);
+  const [spin, setSpin] = useState(0);
+  const [celebration, setCelebration] = useState(0);
   const [quipIndex, setQuipIndex] = useState(0);
+  const [weaveStatus, setWeaveStatus] = useState("");
+  const [filament, setFilament] = useState<{ key: number; legs: readonly WeaveLeg[] } | null>(null);
 
   const [initialPerch] = useState<Point | null>(() =>
     perchOf(selectPerchId(useMemexStore.getState())),
@@ -506,25 +929,86 @@ export function SprocketCrawler() {
   const x = useMotionValue(initialPerch?.x ?? 0);
   const y = useMotionValue(initialPerch?.y ?? 0);
   const opacity = useMotionValue(1);
+  const scaleX = useMotionValue<number>(SPROCKET_PHYSICS.rest.scaleX);
+  const scaleY = useMotionValue<number>(SPROCKET_PHYSICS.rest.scaleY);
+  const pupilX = useMotionValue(0);
+  const pupilY = useMotionValue(0);
+  const happy = useMotionValue(0);
+  const wagRotate = useMotionValue(0);
+  const wagX = useMotionValue(0);
+  const weaveProgress = useMotionValue(0);
+  const filamentOpacity = useMotionValue(1);
 
   const reducedRef = useRef(reduce);
   const controllerRef = useRef<Controller | null>(null);
+  const spriteRef = useRef<HTMLButtonElement | null>(null);
   const previousRef = useRef<{ trailId: string | null; index: number; perchId: string | null } | null>(null);
   const bubbleTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const promptVisibleRef = useRef(false);
+  const promptShownRef = useRef(false);
+  const bubbleKeyRef = useRef(0);
+  const filamentKeyRef = useRef(0);
+  const filamentFadeRef = useRef<AnimationPlaybackControls | null>(null);
+  const weaveKeyCleanupRef = useRef<(() => void) | null>(null);
+  const fitViewRef = useRef(fitView);
 
   useEffect(() => {
     reducedRef.current = reduce;
   }, [reduce]);
-
-  // Controller, store subscription and ghost reaction. One subscription: it
-  // runs outside React, so card drags never re-render this component.
   useEffect(() => {
+    fitViewRef.current = fitView;
+  }, [fitView]);
+
+  const hasPerch = perchId !== null;
+
+  // --- bubbles ------------------------------------------------------------
+  const hideBubble = useCallback(() => {
+    clearTimeout(bubbleTimerRef.current);
+    promptVisibleRef.current = false;
+    setBubble(null);
+  }, []);
+
+  const showBubble = useCallback((text: string, action: boolean, ms: number) => {
+    clearTimeout(bubbleTimerRef.current);
+    bubbleKeyRef.current += 1;
+    promptVisibleRef.current = action;
+    setBubble({ key: bubbleKeyRef.current, text, action });
+    bubbleTimerRef.current = setTimeout(() => {
+      promptVisibleRef.current = false;
+      setBubble(null);
+    }, ms);
+  }, []);
+
+  // --- controller, store subscription, ghost reaction and weave ----------
+  useEffect(() => {
+    const stopHappyWag = { current: null as AnimationPlaybackControls[] | null };
     const controller = createController({
       x,
       y,
       opacity,
+      scaleX,
+      scaleY,
       setMode,
       isReduced: () => reducedRef.current,
+      onHappy: (isHappy) => {
+        // The arch cross-fades in by opacity; the wag is a small rotate and shift (not under reduced motion).
+        animate(happy, isHappy ? 1 : 0, { duration: reducedRef.current ? 0.15 : 0.18 });
+        for (const c of stopHappyWag.current ?? []) c.stop();
+        stopHappyWag.current = null;
+        if (isHappy && !reducedRef.current) {
+          const half = WAG.periodMs / 2000;
+          const options = { duration: half, repeat: Infinity, repeatType: "mirror" as const, ease: "easeInOut" as const };
+          wagRotate.set(-WAG.rotateDeg);
+          wagX.set(-WAG.shiftX);
+          stopHappyWag.current = [
+            animate(wagRotate, WAG.rotateDeg, options),
+            animate(wagX, WAG.shiftX, options),
+          ];
+        } else {
+          animate(wagRotate, 0, { duration: 0.15 });
+          animate(wagX, 0, { duration: 0.15 });
+        }
+      },
     });
     controllerRef.current = controller;
 
@@ -532,9 +1016,11 @@ export function SprocketCrawler() {
     let before: readonly GhostDiscovery[] = [];
     let startKey = "";
 
-    const unsubscribe = useMemexStore.subscribe((s, prev) => {
+    const unsubscribeMemex = useMemexStore.subscribe((s, prev) => {
       if (s.nodes !== prev.nodes) controller.follow();
-      if (s.nodes !== prev.nodes || s.ghostDiscoveries !== prev.ghostDiscoveries) controller.validate();
+      if (s.nodes !== prev.nodes || s.ghostDiscoveries !== prev.ghostDiscoveries || s.trails !== prev.trails) {
+        controller.validate();
+      }
       if (s.isGhostScanning === prev.isGhostScanning) return;
       if (s.isGhostScanning) {
         // Scan started: remember what exists and which cards were there.
@@ -553,15 +1039,229 @@ export function SprocketCrawler() {
       controller.react(target);
     });
 
+    // --- the weaving show --------------------------------------------------
+    const fadeFilament = (ms: number) => {
+      filamentFadeRef.current?.stop();
+      filamentFadeRef.current = animate(filamentOpacity, 0, {
+        duration: ms / 1000,
+        ease: "easeOut",
+        onComplete: () => {
+          filamentFadeRef.current = null;
+          setFilament(null);
+        },
+      });
+    };
+
+    const stopWeaveKeys = () => {
+      weaveKeyCleanupRef.current?.();
+      weaveKeyCleanupRef.current = null;
+    };
+
+    const runWeave = () => {
+      const memex = useMemexStore.getState();
+      if (memex.activeTrailId !== null || controller.isWeaving()) return;
+      const session = useSprocketSession.getState();
+      const added = memex.generateAndAddAutoTrails();
+      const after = useMemexStore.getState();
+      const choice = chooseWeaveTrail(added, after.trails, session.weaveCursor);
+      const trail = choice.trail;
+      if (trail === null) {
+        showToast("NO_AUTO_TRAIL");
+        return;
+      }
+      session.setWeaveCursor(choice.nextCursor);
+      const stopIds = trail.nodeIds.filter((id) => after.nodes.some((n) => n.id === id));
+      const rects = rectMap(stopIds);
+      const legs = planWeave(stopIds, rects, (a, b) => findWireDirection(after.edges, a, b));
+      if (legs.length === 0) {
+        showToast("NO_AUTO_TRAIL");
+        return;
+      }
+
+      hideBubble();
+      session.beginWeave(trail.id);
+      filamentFadeRef.current?.stop();
+      filamentFadeRef.current = null;
+      weaveProgress.set(0);
+      filamentOpacity.set(1);
+      filamentKeyRef.current += 1;
+      setFilament({ key: filamentKeyRef.current, legs });
+      setWeaveStatus(weaveProgressText(trail.title, 1, legs.length + 1));
+
+      const onKey = (e: KeyboardEvent) => {
+        if (e.key === "Escape") controller.cancelWeave("cancelled");
+      };
+      window.addEventListener("keydown", onKey);
+      weaveKeyCleanupRef.current = () => window.removeEventListener("keydown", onKey);
+
+      // The camera frames the whole trail while Sprocket runs to its first stop (800 ms).
+      void fitViewRef.current({
+        nodes: stopIds.map((id) => ({ id })),
+        padding: 0.25,
+        duration: reducedRef.current ? 0 : 800,
+      });
+
+      const started = controller.weave({
+        legs,
+        stopIds,
+        signature: rectsSignature(stopIds, rects),
+        trailId: trail.id,
+        progress: weaveProgress,
+        onStop: (n) => setWeaveStatus(weaveProgressText(trail.title, n, legs.length + 1)),
+        onCelebrate: () => {
+          setSpin((n) => n + 1);
+          setCelebration((n) => n + 1);
+        },
+        onFinish: (result) => {
+          stopWeaveKeys();
+          useSprocketSession.getState().endWeave();
+          setWeaveStatus("");
+          fadeFilament(result === "completed" ? FILAMENT_FADE_MS : 400);
+          if (result === "completed") {
+            const store = useMemexStore.getState();
+            // The Lever opens at stop 0 (the camera director glides there).
+            store.setActiveTrail(trail.id);
+            showBubble(weaveDoneText(trail.title, stopIds.length), false, WEAVE_BUBBLE_MS);
+          } else {
+            showBubble(result === "aborted" ? WEAVE_ABORTED_TEXT : WEAVE_CANCELLED_TEXT, false, SPROCKET_BUBBLE_MS);
+          }
+        },
+      });
+      if (!started) {
+        stopWeaveKeys();
+        useSprocketSession.getState().endWeave();
+        setFilament(null);
+        setWeaveStatus("");
+      }
+    };
+
+    const unsubscribeSession = useSprocketSession.subscribe((s, prev) => {
+      if (s.weaveRequestId !== prev.weaveRequestId) runWeave();
+    });
+
     return () => {
-      unsubscribe();
+      unsubscribeMemex();
+      unsubscribeSession();
       clearTimeout(afterglowTimer);
+      stopWeaveKeys();
+      filamentFadeRef.current?.stop();
+      for (const c of stopHappyWag.current ?? []) c.stop();
+      if (controller.isWeaving()) useSprocketSession.getState().endWeave();
       controller.dispose();
       controllerRef.current = null;
     };
-  }, [x, y, opacity]);
+  }, [
+    x, y, opacity, scaleX, scaleY, happy, wagRotate, wagX, weaveProgress, filamentOpacity,
+    hideBubble, showBubble,
+  ]);
 
-  // Placement: first sight, relocation, or a scurry when the trail moved one stop.
+  // --- eye tracking and the happy state ------------------------------------
+  // One passive window listener, throttled with requestAnimationFrame, writing
+  // motion values: moving the mouse never re-renders React.
+  useEffect(() => {
+    if (!hasPerch || typeof window === "undefined") return;
+    let frame = 0;
+    let pointer: Point | null = null;
+    let isHappy = false;
+
+    const update = () => {
+      frame = 0;
+      const el = spriteRef.current;
+      if (pointer === null || el === null) return;
+      const box = el.getBoundingClientRect();
+      if (box.width === 0 || box.height === 0) return;
+      const center: Point = { x: box.left + box.width / 2, y: box.top + box.height / 2 };
+      const offset = pupilToSprite(pupilOffset(center, pointer, PUPIL_MAX_RADIUS));
+      pupilX.set(offset.x);
+      pupilY.set(offset.y);
+      const near = isCursorNear(
+        pointDistance(center, pointer),
+        isHappy ? CURSOR_NEAR_PX + CURSOR_NEAR_HYSTERESIS_PX : CURSOR_NEAR_PX,
+      );
+      if (near !== isHappy) {
+        isHappy = near;
+        controllerRef.current?.setHappy(near);
+      }
+    };
+    const schedule = () => {
+      if (frame === 0) frame = requestAnimationFrame(update);
+    };
+    const onMove = (e: PointerEvent) => {
+      // Touch has no cursor to follow.
+      if (e.pointerType === "touch") return;
+      pointer = { x: e.clientX, y: e.clientY };
+      schedule();
+    };
+    const reset = () => {
+      pointer = null;
+      if (frame !== 0) cancelAnimationFrame(frame);
+      frame = 0;
+      animate(pupilX, 0, { duration: 0.2 });
+      animate(pupilY, 0, { duration: 0.2 });
+      if (isHappy) {
+        isHappy = false;
+        controllerRef.current?.setHappy(false);
+      }
+    };
+    const onOut = (e: MouseEvent) => {
+      if (e.relatedTarget === null) reset();
+    };
+
+    window.addEventListener("pointermove", onMove, POINTER_OPTIONS);
+    document.documentElement.addEventListener("pointerleave", reset, POINTER_OPTIONS);
+    window.addEventListener("mouseout", onOut, POINTER_OPTIONS);
+    window.addEventListener("blur", reset, POINTER_OPTIONS);
+    // Sprocket itself moves (scurry, weave): refresh the direction while the pointer rests.
+    const offX = x.on("change", schedule);
+    const offY = y.on("change", schedule);
+    return () => {
+      window.removeEventListener("pointermove", onMove, POINTER_OPTIONS);
+      document.documentElement.removeEventListener("pointerleave", reset, POINTER_OPTIONS);
+      window.removeEventListener("mouseout", onOut, POINTER_OPTIONS);
+      window.removeEventListener("blur", reset, POINTER_OPTIONS);
+      offX();
+      offY();
+      if (frame !== 0) cancelAnimationFrame(frame);
+    };
+  }, [hasPerch, x, y, pupilX, pupilY]);
+
+  // --- idle weave prompt ---------------------------------------------------
+  useEffect(() => {
+    if (!idle) {
+      // Activity returned: the next idle period may offer once more.
+      promptShownRef.current = false;
+      return;
+    }
+    const memex = useMemexStore.getState();
+    const session = useSprocketSession.getState();
+    const gate = {
+      cardCount: memex.nodes.length,
+      activeTrailId: memex.activeTrailId,
+      isWeaving: session.isWeaving,
+      idle: true,
+      shownThisPeriod: promptShownRef.current,
+    };
+    // Cheap rules first; the (pure) genesis only runs when the offer could show.
+    if (!shouldShowWeavePrompt({ ...gate, trailAvailable: true })) return;
+    const available = generateAutoTrails(memex.nodes, memex.edges, memex.ghostDiscoveries).length > 0;
+    if (!shouldShowWeavePrompt({ ...gate, trailAvailable: available })) return;
+    promptShownRef.current = true;
+    showBubble(WEAVE_PROMPT_TEXT, true, WEAVE_PROMPT_MS);
+  }, [idle, showBubble]);
+
+  // Deliberate input elsewhere (click, key, wheel, touch) dismisses the prompt. Moving
+  // the mouse does not, so the user can reach Sprocket. Input on Sprocket is ignored.
+  useEffect(() => {
+    return getSharedTracker().subscribeActivity((event) => {
+      if (!promptVisibleRef.current) return;
+      if (event instanceof KeyboardEvent && (event.key === "Tab" || event.key === "Shift")) return;
+      const target = event.target;
+      if (target instanceof Element && target.closest("[data-sprocket-root]") !== null) return;
+      hideBubble();
+    });
+  }, [hideBubble]);
+
+  // --- placement: first sight, relocation, or a scurry when the trail moved one stop ---
   useEffect(() => {
     const controller = controllerRef.current;
     if (controller === null) return;
@@ -591,14 +1291,24 @@ export function SprocketCrawler() {
     [],
   );
 
+  const startWeave = useCallback(() => {
+    hideBubble();
+    return useSprocketSession.getState().requestWeave();
+  }, [hideBubble]);
+
   const onActivate = useCallback(() => {
+    // Clicking Sprocket mid-weave stops the show.
+    if (controllerRef.current?.cancelWeave("cancelled") === true) return;
+    // While the idle prompt shows, a click starts the weave instead of a quip.
+    if (promptVisibleRef.current && startWeave()) return;
     const next = clicks + 1;
     setClicks(next);
-    setBubble({ key: next, text: selectSprocketQuip(quipIndex) });
+    setSpin((n) => n + 1);
+    showBubble(selectSprocketQuip(quipIndex), false, SPROCKET_BUBBLE_MS);
     setQuipIndex(advanceQuipIndex(quipIndex));
-    clearTimeout(bubbleTimerRef.current);
-    bubbleTimerRef.current = setTimeout(() => setBubble(null), SPROCKET_BUBBLE_MS);
-  }, [clicks, quipIndex]);
+  }, [clicks, quipIndex, showBubble, startWeave]);
+
+  const eye: EyeMotion = { pupilX, pupilY, happy };
 
   if (perchId === null) return null;
 
@@ -607,8 +1317,25 @@ export function SprocketCrawler() {
 
   return (
     <ViewportPortal>
+      {filament !== null ? (
+        <svg
+          key={filament.key}
+          aria-hidden="true"
+          focusable="false"
+          width={1}
+          height={1}
+          style={{ position: "absolute", left: 0, top: 0, overflow: "visible", pointerEvents: "none", zIndex: 1150 }}
+        >
+          <motion.g style={{ opacity: filamentOpacity }}>
+            {filament.legs.map((leg, i) => (
+              <FilamentLeg key={`${leg.fromId}->${leg.toId}`} leg={leg} index={i} progress={weaveProgress} />
+            ))}
+          </motion.g>
+        </svg>
+      ) : null}
       <motion.div
         className="nopan nodrag nowheel"
+        data-sprocket-root=""
         style={{
           position: "absolute",
           left: 0,
@@ -647,6 +1374,7 @@ export function SprocketCrawler() {
             }}
           >
             {mode === "alert" ? <span className="sr-only">Sprocket spotted a new ghost synapse.</span> : null}
+            {weaveStatus !== "" ? <span className="sr-only">{weaveStatus}</span> : null}
             <AnimatePresence>
               {bubble !== null ? (
                 <motion.div
@@ -665,9 +1393,22 @@ export function SprocketCrawler() {
                     fontSize: 11,
                     lineHeight: 1.35,
                     boxShadow: "0 6px 18px rgba(0, 0, 0, 0.65), 0 0 10px rgba(255, 178, 54, 0.18)",
+                    pointerEvents: bubble.action ? "auto" : "none",
                   }}
                 >
-                  {bubble.text}
+                  <span>{bubble.text}</span>
+                  {bubble.action ? (
+                    <button
+                      type="button"
+                      onClick={startWeave}
+                      onFocus={() => clearTimeout(bubbleTimerRef.current)}
+                      aria-label="Auto-weave trail: let Sprocket scamper through a generated trail"
+                      className="nopan nodrag nowheel mt-1.5 block w-full cursor-pointer rounded-lg border border-accent-ghost/70 bg-[#090A0F] px-2 py-1 font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-accent-ghost focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-accent-ghost"
+                      style={{ boxShadow: "0 0 10px rgba(179, 136, 255, 0.35)" }}
+                    >
+                      {WEAVE_BUTTON_LABEL}
+                    </button>
+                  ) : null}
                 </motion.div>
               ) : null}
             </AnimatePresence>
@@ -709,6 +1450,7 @@ export function SprocketCrawler() {
           </AnimatePresence>
 
           <button
+            ref={spriteRef}
             type="button"
             onClick={onActivate}
             aria-label="Sprocket the microfilm crawler: click for a quip"
@@ -726,31 +1468,56 @@ export function SprocketCrawler() {
               pointerEvents: "auto",
             }}
           >
+            {/* Squash and stretch, anchored at the feet (bottom center). */}
             <motion.span
-              initial={false}
-              animate={mode}
-              variants={reduce ? STATIC_BODY_VARIANTS : BODY_VARIANTS}
-              style={{ display: "block", width: SPROCKET_SIZE, height: SPROCKET_SIZE }}
+              style={{
+                display: "block",
+                width: SPROCKET_SIZE,
+                height: SPROCKET_SIZE,
+                scaleX,
+                scaleY,
+                transformOrigin: "50% 100%",
+              }}
             >
-              {/* Click: a full mechanical turn (reduced motion: a brief flicker instead). */}
+              {/* Happy wag: a small rotate and shift while the cursor is near. */}
               <motion.span
-                key={clicks}
-                initial={clicks === 0 ? false : { rotate: 0, opacity: 1 }}
-                animate={
-                  clicks === 0
-                    ? { rotate: 0, opacity: 1 }
-                    : reduce
-                      ? { rotate: 0, opacity: [1, 0.35, 1] }
-                      : { rotate: [0, 360], opacity: 1 }
-                }
-                transition={{ duration: reduce ? 0.3 : 0.6, ease: [0.5, 0, 0.2, 1] }}
-                style={{ display: "block", width: SPROCKET_SIZE, height: SPROCKET_SIZE }}
+                style={{
+                  display: "block",
+                  width: SPROCKET_SIZE,
+                  height: SPROCKET_SIZE,
+                  rotate: wagRotate,
+                  x: wagX,
+                  transformOrigin: "50% 100%",
+                }}
               >
-                <SprocketSprite awake={awake} moving={moving} still={reduce} />
+                <motion.span
+                  initial={false}
+                  animate={mode}
+                  variants={reduce ? STATIC_BODY_VARIANTS : BODY_VARIANTS}
+                  style={{ display: "block", width: SPROCKET_SIZE, height: SPROCKET_SIZE }}
+                >
+                  {/* Click and celebration: a full mechanical turn (reduced motion: a brief flicker instead). */}
+                  <motion.span
+                    key={spin}
+                    initial={spin === 0 ? false : { rotate: 0, opacity: 1 }}
+                    animate={
+                      spin === 0
+                        ? { rotate: 0, opacity: 1 }
+                        : reduce
+                          ? { rotate: 0, opacity: [1, 0.35, 1] }
+                          : { rotate: [0, 360], opacity: 1 }
+                    }
+                    transition={{ duration: reduce ? 0.3 : 0.6, ease: [0.5, 0, 0.2, 1] }}
+                    style={{ display: "block", width: SPROCKET_SIZE, height: SPROCKET_SIZE }}
+                  >
+                    <SprocketSprite awake={awake} moving={moving} still={reduce} eye={eye} />
+                  </motion.span>
+                </motion.span>
               </motion.span>
             </motion.span>
           </button>
           {clicks > 0 ? <SteamPuff key={`puff-${clicks}`} still={reduce} /> : null}
+          {celebration > 0 && !reduce ? <SparkBurst key={`sparks-${celebration}`} /> : null}
         </motion.div>
       </motion.div>
     </ViewportPortal>

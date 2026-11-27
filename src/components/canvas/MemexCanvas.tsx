@@ -30,6 +30,8 @@ import {
 } from "@/store/ghost-selectors";
 import { useMemexStore, type MemexStore } from "@/store/useMemexStore";
 import { loadUserGeminiKey } from "@/store/ai-settings";
+import { useSprocketSession, selectIsWeaving, selectRequestWeave } from "@/store/useSprocketSession";
+import { WEAVE_BUTTON_LABEL, WEAVE_MIN_CARDS, canStartWeave } from "@/core/sprocket-motion";
 import { AISettingsModal } from "../ghost/AISettingsModal";
 import { SynapseInspectorDrawer } from "../ghost/SynapseInspectorDrawer";
 import { ArchivalTimeline } from "../trails/ArchivalTimeline";
@@ -74,6 +76,7 @@ const selectOnNodesChange = (s: MemexStore) => s.onNodesChange;
 const selectOnEdgesChange = (s: MemexStore) => s.onEdgesChange;
 const selectOnConnect = (s: MemexStore) => s.onConnect;
 const selectHydrated = (s: MemexStore) => s.hydrated;
+const selectHudActiveTrailId = (s: MemexStore) => s.activeTrailId;
 const selectDiscoveries = (s: MemexStore): GhostDiscovery[] =>
   s.ghostDiscoveries ?? NO_DISCOVERIES;
 
@@ -89,6 +92,16 @@ function ArchivalHud() {
   const triggerScan = useMemexStore(selectTriggerGhostScan);
   const engineMode = useMemexStore(selectGhostEngineMode);
   const wakeGhost = useCallback(() => void triggerScan(), [triggerScan]);
+  // Auto-weave: granular, primitive selectors (a card drag changes none of them).
+  const activeTrailId = useMemexStore(selectHudActiveTrailId);
+  const isWeaving = useSprocketSession(selectIsWeaving);
+  const requestWeave = useSprocketSession(selectRequestWeave);
+  const weaveReady = canStartWeave({ cardCount: nodeCount, activeTrailId, isWeaving });
+  const weaveHint = isWeaving
+    ? "Sprocket is weaving. Press Esc or click Sprocket to stop."
+    : activeTrailId !== null
+      ? "Exit the playing trail to weave a new one."
+      : "Sprocket generates a trail from your cards and scampers along it.";
 
   // Key detection: the server reports whether GEMINI_API_KEY is set (never the key);
   // a key saved in this browser also counts.
@@ -239,6 +252,25 @@ function ArchivalHud() {
           />
           {scanning ? "Scanning archive…" : "⚡ Wake Ghost Engine"}
         </button>
+        {nodeCount >= WEAVE_MIN_CARDS ? (
+          <>
+            <button
+              type="button"
+              onClick={() => void requestWeave()}
+              disabled={!weaveReady}
+              aria-busy={isWeaving}
+              aria-describedby="auto-weave-hint"
+              aria-label="Auto-weave trail: Sprocket builds a trail from your cards and walks it"
+              title={weaveHint}
+              className={`${ghostButtonClass} mt-2 flex w-full flex-wrap items-center justify-center gap-x-2 gap-y-0.5 text-center disabled:cursor-not-allowed disabled:opacity-40`}
+            >
+              <span aria-hidden="true">{isWeaving ? "Weaving…" : `[${WEAVE_BUTTON_LABEL}]`}</span>
+            </button>
+            <span id="auto-weave-hint" className="sr-only">
+              {weaveHint}
+            </span>
+          </>
+        ) : null}
         <GhostGuidanceBeacon />
         <div className="mt-2 flex items-center gap-2">
           <span

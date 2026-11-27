@@ -1,6 +1,6 @@
 # Requirements Document: The Ghost & Sprocket (UX Mischief & Guidance Suite)
 ## Introduction
-This specification adds a small cast of helpers to Memex 2.0: **Sprocket**, a brass microfilm crawler that sits on cards, scurries along trail wires and reacts to the Ghost Engine; a **Ghost Guidance Beacon** that tells the user what to do next; and **retro toasts** for three user mistakes. All of it is presentation. It reads the graph and playback state, writes nothing to the graph, and adds no persisted or exported state.
+This specification adds a small cast of helpers to Memex 2.0: **Sprocket**, a brass microfilm crawler that sits on cards, scurries along trail wires and reacts to the Ghost Engine; a **Ghost Guidance Beacon** that tells the user what to do next; and **retro toasts** for three user mistakes. *(Spec 07 later added a fourth toast, `NO_AUTO_TRAIL`, and gave Sprocket squash-and-stretch physics, eye tracking and a weaving show. The notes marked "Spec 07" below record what changed.)* All of it is presentation. It reads the graph and playback state, writes nothing to the graph, and adds no persisted or exported state.
 Terminology maps to the real codebase: a "card" is a `MemexNode` in the store's `nodes`; the active trail step is `activeTrailIndex`; auto-play is `isPlayingAuto`; discoveries are `ghostDiscoveries`. "The 1945 Lever" is the `TrailPlaybackDock`, which appears only while a trail is active. The trail picker is the top-center `TrailSelectorMenu` ("Trails · N"), not the dock. The Wake button reads "⚡ Wake Ghost Engine" (the HUD sets it in capitals).
 ## Requirements
 ### Requirement 1: Sprocket Sprite
@@ -16,7 +16,7 @@ Terminology maps to the real codebase: a "card" is a `MemexNode` in the store's 
 ### Requirement 2: Trail Wire Traversal
 **User Story:** As a researcher, I want Sprocket to follow the line between trail stops, so that the playback feels like a journey along a real wire.
 #### Acceptance Criteria
-1. WHEN `activeTrailIndex` of the same active trail changes by exactly one, THE SYSTEM SHALL move Sprocket from the old stop's perch along the wire to the new stop's perch in 800 ms, the length of the camera glide.
+1. WHEN `activeTrailIndex` of the same active trail changes by exactly one, THE SYSTEM SHALL move Sprocket from the old stop's perch along the wire to the new stop's perch in 800 ms, the length of the camera glide. *(Spec 07: the 800 ms now holds a 150 ms wind-up and a 650 ms flight, followed by the landing rebound.)*
 2. THE wire SHALL be the same cubic Bezier the `AssociativePulseEdge` draws between those two cards: the same facing sides, anchors and curvature, computed by one shared pure function.
 3. WHEN the stored edge between the two stops runs the other way, THE SYSTEM SHALL walk that stored curve backwards, so Sprocket still follows the drawn line.
 4. WHEN no edge joins the two stops, THE SYSTEM SHALL use the curve an edge between them would take, and SHALL NOT fail.
@@ -38,7 +38,7 @@ Terminology maps to the real codebase: a "card" is a `MemexNode` in the store's 
 **User Story:** As a researcher, I want a clickable character with a bit of personality, so that the tool is friendly.
 #### Acceptance Criteria
 1. THE sprite SHALL be a native `<button>` with `aria-label="Sprocket the microfilm crawler: click for a quip"`, reachable by keyboard and operable with Enter and Space, with a visible focus outline.
-2. WHEN the user activates Sprocket, THE SYSTEM SHALL turn it 360° once, show a miniature steam puff (a few small SVG circles that rise and fade, no filters) and show a speech bubble.
+2. WHEN the user activates Sprocket, THE SYSTEM SHALL turn it 360° once *(Spec 07: not while the idle weave prompt shows, when the activation starts the weave instead, and not while a weave runs, when it stops the weave)*, show a miniature steam puff (a few small SVG circles that rise and fade, no filters) and show a speech bubble.
 3. THE bubble SHALL show the next of four quips, in this order and verbatim: "Synapse tensile strength nominal, Professor!", "Careful with that 1945 lever—gears haven't been greased since Engelbart's demo.", "I found a conceptual bridge! Or maybe it's just lint in the microfilm reel.", "Associative trails verified. Vannevar Bush would be proud."
 4. THE quip SHALL be chosen by a click counter held in the component and advanced by a pure function, never by a random number. For any index (negative, huge, non-integer, NaN, infinite), THE SYSTEM SHALL return one of the four quips, never an empty value, and the same index SHALL give the same quip.
 5. THE bubble SHALL dismiss itself after 3.5 seconds, SHALL be inside a persistent `role="status"` region with `aria-live="polite"`, and SHALL NOT take pointer events.
@@ -61,7 +61,7 @@ Terminology maps to the real codebase: a "card" is a `MemexNode` in the store's 
    | 8 | `cards-no-trail` | otherwise | "Select an associative trail from the Trails menu at the top to pull up the 1945 Lever." |
 
 4. THE idle time SHALL be strictly greater than `IDLE_THRESHOLD_MS` (15000) to count as idle; NaN and negative values SHALL NOT count.
-5. THE SYSTEM SHALL measure idle time with passive, throttled listeners (pointer, keyboard, wheel, touch) that are removed on unmount, and a one-second timer that sets state only when the idle flag flips. Activity SHALL reset the flag at once.
+5. THE SYSTEM SHALL measure idle time with passive, throttled listeners (pointer, keyboard, wheel, touch) that are removed on unmount *(Spec 07: one shared set, `activity-tracker.ts`, also used by Sprocket's weave prompt)*, and a one-second timer that sets state only when the idle flag flips. Activity SHALL reset the flag at once.
 6. THE beacon SHALL re-render only when one of its primitive inputs changes, so a card drag does not re-render it, and its live region SHALL announce only a change of state.
 7. THE beacon SHALL offer a visible "✕" control (labelled "Hide ghost hints") that collapses it to a "Show ghost hints" button. THE choice SHALL last for the session only and SHALL NOT be persisted.
 8. THE bracketed control names SHALL match the real controls: `[I]` (shortcut), "▶ Auto-Play" / "❚❚ Auto-Play" and "Next ▶" (dock), "⚡ Wake Ghost Engine" (HUD, shown in capitals), "+ Forge Trail" (Trails menu), and Escape (exits playback).

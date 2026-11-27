@@ -1,0 +1,34 @@
+# Implementation Plan: 07-sprocket-and-trail-genesis
+- [x] 1. Author the spec
+  - Create `requirements.md`, `design.md` and `tasks.md` in `.kiro/specs/07-sprocket-and-trail-genesis/`.
+  - _Requirements: 1.1 to 8.6_
+- [x] 2. Pure trail genesis
+  - Create `src/core/trail-genesis.ts`: `generateAutoTrails(nodes, edges, discoveries, options?)` with the Lineage Arc (chronological, 8-card selection by degree then even spread), the Dialectical Debate (refutes components extended by synthesizes edges) and the Dense Conceptual Nexus (greedy affinity cluster with a minimum mean affinity and an edge/discovery tie-break boost); deterministic ids `t-auto-<kind>-<8 hex>`; `autoTrailKind`, `isAutoTrailId`, `isDuplicateTrail`, `chooseWeaveTrail`.
+  - Export `normalizedTags` and `sharedConceptIds` from `src/core/ghost-engine.ts` (no behavior change).
+  - _Requirements: 4.1 to 4.8, 5.1, 5.2_
+- [x] 3. Store action
+  - Add `generateAndAddAutoTrails(): Trail[]` to `src/store/useMemexStore.ts`: live graph, `createdAt` now, skip duplicates by id or ordered `nodeIds`, one commit, returns the added trails, `[]` and no write when nothing is new, playback untouched.
+  - _Requirements: 4.9, 4.10_
+- [x] 4. Pure Sprocket motion
+  - Create `src/core/sprocket-motion.ts`: `SPROCKET_PHYSICS`, `flightMsFor`, `pupilOffset`, `pupilToSprite`, `isCursorNear`, `pointDistance`, the state machine (`reduceSprocket`, `SPROCKET_TRANSITIONS`), the weave plan (`planWeave`, `planWeaveLeg`, `legPointAt`, `arcFractionAt`, `polylinePath`, `rectsSignature`), `sparkBurst`, trigger rules (`canStartWeave`, `shouldShowWeavePrompt`) and copy.
+  - Add the `NO_AUTO_TRAIL` toast kind to `src/core/sprocket-engine.ts` and its violet accent in `RetroToaster.tsx`.
+  - _Requirements: 1.2, 2.2, 2.5, 3.1 to 3.4, 5.3, 5.5, 6.2, 6.3, 7.1_
+- [x] 5. Session store and shared activity tracker
+  - Create `src/store/useSprocketSession.ts` (`isWeaving`, `weavingTrailId`, `weaveRequestId`, `weaveCursor`, gated `requestWeave`), session-only and separate from `useMemexStore`.
+  - Create `src/components/canvas/activity-tracker.ts` (one ref-counted set of passive window listeners, idle flag, deliberate-input callbacks) and make `GhostGuidanceBeacon.tsx` use it.
+  - _Requirements: 5.9, 5.11, 6.2, 6.6, 8.3_
+- [x] 6. Sprocket 2.0 component
+  - Extend `src/components/canvas/SprocketCrawler.tsx`: squash and stretch wrappers and sequence (wind-up, flight, landing) for scurry, relocation and reaction; rAF-throttled passive pointer tracking with the happy arch and wag; the state machine in the controller; the weaving show (plan, approach, legs, filament, celebration with sparks, activation, cancel, abort, cleanup); idle prompt; click behavior; reduced-motion paths; aria-live progress.
+  - _Requirements: 1.1 to 1.6, 2.1 to 2.8, 3.5, 3.6, 5.1 to 5.12, 6.3 to 6.5, 7.1 to 7.4, 8.2, 8.3_
+- [x] 7. HUD trigger
+  - Add the `[🧶 AUTO-WEAVE TRAIL]` button to `ArchivalHud` in `MemexCanvas.tsx` (3 or more cards, disabled while weaving or a trail is active, accessible label and hint, wraps at narrow widths).
+  - _Requirements: 6.1, 6.2, 7.3, 8.5_
+- [x] 8. Property-based and unit tests
+  - Create `src/core/__tests__/trail-genesis.property.test.ts` (Properties 1 to 3 and the determinism, debate, nexus, seed, schema and weave-choice tests), `src/core/__tests__/sprocket-motion.property.test.ts` (physics, eye, state machine, weave plan, sparks, trigger rules), `src/store/__tests__/auto-trails.test.ts` (dedup, persist once, export/import, playback untouched, session-only state) and `src/components/canvas/__tests__/activity-tracker.test.ts`; 200 runs per property.
+  - _Requirements: 1.2, 2.2, 3.1 to 3.4, 4.1 to 4.10, 5.2, 5.9, 5.11, 6.2, 6.6_
+- [x] 9. Update the Spec 06 documents where behavior changed
+  - `requirements.md` and `design.md` of `06-ghost-and-sprocket`: the move now includes the 150 ms wind-up inside the 800 ms, the fourth toast, the shared idle tracker, and the click behavior while the weave prompt shows.
+  - _Requirements: 1.4, 5.1, 6.6_
+- [x] 10. Verify and commit
+  - Run `npx tsc --noEmit`, `npx vitest run`, `npx eslint src` and `npm run build`; commit `feat(spec-07): implement sprocket 2.0 physics and ai auto-trail genesis`.
+  - _Requirements: all_

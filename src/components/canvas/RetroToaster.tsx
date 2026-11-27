@@ -27,7 +27,7 @@ function ToastCard({
     return () => clearTimeout(timer);
   }, [id, onDismiss]);
 
-  const violet = toast.kind === "ARXIV_INVALID";
+  const violet = toast.kind === "ARXIV_INVALID" || toast.kind === "NO_AUTO_TRAIL";
   const accent = violet ? "#B388FF" : "#FFB236";
   return (
     <motion.div

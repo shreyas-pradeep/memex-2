@@ -43,6 +43,7 @@ import {
   ghostPairKey,
   sanitizeGhostSuggestions,
 } from "@/core/ghost-engine";
+import { generateAutoTrails, isDuplicateTrail } from "@/core/trail-genesis";
 import { GEMINI_KEY_HEADER, loadUserGeminiKey } from "./ai-settings";
 import { demoSeed } from "@/data/demo-seed";
 
@@ -406,6 +407,14 @@ export interface MemexStore extends MemexGraphState {
   exitTrailPlayback: () => void;
   /** Creates a human trail from ordered card IDs and returns its ID (null when fewer than 2 valid cards). */
   forgeTrail: (title: string, description: string, nodeIds: string[]) => string | null;
+  /**
+   * Generates the auto trails the live graph supports (Lineage Arc, Dialectical
+   * Debate, Dense Conceptual Nexus) and stores those that are new: a trail whose
+   * id or ordered card sequence already exists is skipped. Persists once and
+   * returns the trails actually added; `[]` (and no write) when nothing is new.
+   * Never touches playback state.
+   */
+  generateAndAddAutoTrails: () => Trail[];
 
   /** Replaces the whole graph with the demo seed and persists it. */
   resetToSeed: () => void;
@@ -767,6 +776,27 @@ export const useMemexStore = create<MemexStore>()((set, get) => {
       if (trail.nodeIds.length < 2) return null;
       commit(createTrailPure(pick(state), trail));
       return trail.id;
+    },
+
+    generateAndAddAutoTrails: () => {
+      const state = get();
+      const generated = generateAutoTrails(state.nodes, state.edges, state.ghostDiscoveries, {
+        createdAt: new Date().toISOString(),
+      });
+      let graph = pick(state);
+      const known = [...state.trails];
+      const added: Trail[] = [];
+      for (const trail of generated) {
+        if (isDuplicateTrail(trail, known)) continue;
+        const next = createTrailPure(graph, trail);
+        if (next === graph) continue;
+        graph = next;
+        known.push(trail);
+        added.push(next.trails[next.trails.length - 1]);
+      }
+      if (added.length === 0) return [];
+      commit(graph);
+      return added;
     },
 
     resetToSeed: () => {

@@ -50,7 +50,7 @@ flowchart LR
 | Trigger | Action |
 |---|---|
 | First render with cards | `place()`: snap to the perch |
-| `activeTrailIndex` ±1 in the same trail | `traverse(from, to)`: `animate(0, 1, { duration: 0.8, ease: easeInOut })`, each frame `getTraversalPoint` |
+| `activeTrailIndex` ±1 in the same trail | `traverse(from, to)`: 150 ms wind-up, then `animate(0, 1, { duration: 0.65, ease: easeInOut })` (800 ms in all since Spec 07), each frame `getTraversalPoint`, then the landing rebound |
 | Any other perch change (trail start/exit, jump, new card, card removed) | `relocate()`: spring `animate(0, 1, SPRING)` from the current point to the perch (reduced motion: jump and fade) |
 | Scan ends with a new discovery | `react(discovery)` |
 | Card or discovery vanishes during a reaction | `validate()` stops the reaction and settles on the perch |
@@ -99,10 +99,10 @@ The table of texts is in Requirement 5.3 and in `GUIDANCE_TEXT`. Notes:
 - `[▶]` and `[Next]` abbreviate the dock's "▶ Auto-Play" and "Next ▶". `[⚡ WAKE GHOST ENGINE]` is the HUD button as rendered (its CSS sets capitals). `[I]` is the real shortcut. `[Esc]` exits playback.
 - The trail picker is the top "Trails" menu; the dock appears only after a trail is chosen. The `cards-no-trail` text therefore reads "Select an associative trail from the Trails menu at the top to pull up the 1945 Lever." instead of "from the dock".
 - `no-trails` exists so the hint is never false on a canvas with cards but no trails.
-- Idle tracking (`useIdleFlag`): passive capture listeners on `window` for pointermove, pointerdown, keydown, wheel and touchstart; while active, bursts closer than 250 ms are ignored (a plain variable write, no state); a 1 s interval sets the boolean only when `isIdle(now − last)` flips; activity while idle clears it immediately. The beacon feeds `idleMs = IDLE_THRESHOLD_MS + 1` when idle, else 0.
+- Idle tracking (`useIdleFlag`, moved to the shared `activity-tracker.ts` in Spec 07 so the crawler reuses the same listeners): passive capture listeners on `window` for pointermove, pointerdown, keydown, wheel and touchstart; while active, bursts closer than 250 ms are ignored (a plain variable write, no state); a 1 s interval sets the boolean only when `isIdle(now − last)` flips; activity while idle clears it immediately. The beacon feeds `idleMs = IDLE_THRESHOLD_MS + 1` when idle, else 0.
 - The live region's text is a function of the state ID, so it changes (and is announced) only on a state change. Collapsing the beacon is `useState` in the component: session-only.
 ## 5. Toasts
-`pushToast(state, kind)` appends `{ id: nextId, kind, label, message }`, returns the same state when the message equals the newest toast's message, and keeps the last 3 (`MAX_TOASTS`). `dismissToast(state, id)` filters by ID and returns the same state when the ID is absent. `TOAST_CATALOG` maps `EMPTY_DROP`, `TRAIL_END`, `ARXIV_INVALID` to a label ("[ SIGNAL // NOTICE ]", "[ SIGNAL // FRONTIER ]", "[ SIGNAL // LOST ]") and the exact message.
+`pushToast(state, kind)` appends `{ id: nextId, kind, label, message }`, returns the same state when the message equals the newest toast's message, and keeps the last 3 (`MAX_TOASTS`). `dismissToast(state, id)` filters by ID and returns the same state when the ID is absent. `TOAST_CATALOG` maps `EMPTY_DROP`, `TRAIL_END`, `ARXIV_INVALID` (and, since Spec 07, `NO_AUTO_TRAIL`: "[ SIGNAL // STATIC ]", "The reels hold no clear trail yet, Professor. Add a few dated or related cards and try again.") to a label ("[ SIGNAL // NOTICE ]", "[ SIGNAL // FRONTIER ]", "[ SIGNAL // LOST ]") and the exact message.
 
 `RetroToaster` is `position: fixed`, `top-4 right-4`, `z-index: 2100`, width `min(340px, 100vw − 2rem)`, `role="region"` with `aria-live="polite"`, `pointer-events: none` (cards use `auto`). While the Synapse drawer is open (`selectedGhostDiscoveryId !== null`) and the viewport is at least 900 px wide, it moves to `right: 360px + 2rem; top: 6rem` so it sits left of the drawer and below the collapsed Trails menu. Each `ToastCard` runs one `setTimeout(4500)` in an effect and clears it on unmount; entry and exit use the spring (`x: 32 → 0`, `opacity`), or opacity only under reduced motion.
 

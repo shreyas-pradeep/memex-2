@@ -323,7 +323,8 @@ function termFrequencies(data: MemexNodeData): Map<string, number> {
   return tf;
 }
 
-function normalizedTags(data: MemexNodeData): Set<string> {
+/** Lowercased, trimmed, non-empty tags of a card as a set. */
+export function normalizedTags(data: MemexNodeData): Set<string> {
   return new Set(data.tags.map((t) => t.trim().toLowerCase()).filter((t) => t !== ""));
 }
 
@@ -440,7 +441,7 @@ export function crossEraBoost(
 }
 
 /** Concept ids shared by two cards, sorted. */
-function sharedConceptIds(a: ReadonlySet<string>, b: ReadonlySet<string>): string[] {
+export function sharedConceptIds(a: ReadonlySet<string>, b: ReadonlySet<string>): string[] {
   return [...a].filter((c) => b.has(c)).sort();
 }
 

@@ -562,13 +562,17 @@ export const TRAIL_END_MESSAGE =
 export const ARXIV_INVALID_MESSAGE =
   "The signal was lost in the ether. Please check your arXiv identifier.";
 
-export type ToastKind = "EMPTY_DROP" | "TRAIL_END" | "ARXIV_INVALID";
+export const NO_AUTO_TRAIL_MESSAGE =
+  "The reels hold no clear trail yet, Professor. Add a few dated or related cards and try again.";
+
+export type ToastKind = "EMPTY_DROP" | "TRAIL_END" | "ARXIV_INVALID" | "NO_AUTO_TRAIL";
 
 /** Message and monospace label for every toast kind. */
 export const TOAST_CATALOG: Readonly<Record<ToastKind, { label: string; message: string }>> = {
   EMPTY_DROP: { label: "[ SIGNAL // NOTICE ]", message: EMPTY_DROP_MESSAGE },
   TRAIL_END: { label: "[ SIGNAL // FRONTIER ]", message: TRAIL_END_MESSAGE },
   ARXIV_INVALID: { label: "[ SIGNAL // LOST ]", message: ARXIV_INVALID_MESSAGE },
+  NO_AUTO_TRAIL: { label: "[ SIGNAL // STATIC ]", message: NO_AUTO_TRAIL_MESSAGE },
 };
 
 /** Most toasts on screen at once. */
