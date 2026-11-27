@@ -10,6 +10,19 @@ export const EDGE_COLORS: Record<LinkOrigin, string> = {
   ghost: "#B388FF",
 };
 
+/**
+ * Dialectical stance of an edge, orthogonal to its `origin`:
+ * `supports` (default), `refutes` (a tension) or `synthesizes` (a resolution).
+ */
+export type EdgePolarity = "supports" | "refutes" | "synthesizes";
+
+/** Edge colors per polarity. `supports` keeps the origin color (amber human, violet ghost). */
+export const POLARITY_COLORS: Record<EdgePolarity, string> = {
+  supports: "#FFB236",
+  refutes: "#EF4444",
+  synthesizes: "#B388FF",
+};
+
 // Declared as `type` aliases (not interfaces) so they satisfy React Flow's
 // `Record<string, unknown>` data constraint.
 export type MemexNodeData = {
@@ -31,6 +44,12 @@ export type MemexNodeData = {
   date?: string;
   /** Optional event year (integer, e.g. 1945 or 2026). Takes precedence over `date`. */
   year?: number;
+  /** Citation source, e.g. `arXiv:1706.03762`. Absent unless the card came from a resolved source. */
+  source?: string;
+  /** Link to the PDF of the source (https). */
+  pdfUrl?: string;
+  /** Authors of the source, in order. Used for bibliography and BibTeX. */
+  authors?: string[];
 };
 
 export type AssociativeEdgeData = {
@@ -39,6 +58,11 @@ export type AssociativeEdgeData = {
   /** Link strength in [0, 1]. */
   strength: number;
   trailId?: string;
+  /**
+   * Dialectical stance. Absent means `supports` (see `getEdgePolarity`).
+   * Never set on display-only ghost discovery edges.
+   */
+  polarity?: EdgePolarity;
   /** Set only on display-only edges that render a `GhostDiscovery` as a synapse. */
   discoveryId?: string;
 };

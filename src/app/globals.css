@@ -185,8 +185,24 @@ body {
   animation-iteration-count: infinite;
 }
 
+/* Counter-flow pulse for "refutes" edges: travels from target back to source. */
+@keyframes memex-pulse-reverse {
+  from {
+    stroke-dashoffset: -100;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+.memex-edge-pulse-reverse {
+  animation-name: memex-pulse-reverse;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .memex-edge-pulse,
+  .memex-edge-pulse-reverse,
   .memex-phosphor-dot {
     animation: none;
   }

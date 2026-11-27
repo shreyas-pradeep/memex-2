@@ -12,13 +12,31 @@ import {
 } from "@xyflow/react";
 import { AnimatePresence, motion } from "framer-motion";
 import { confidencePercent } from "@/core/ghost-engine";
-import { EDGE_COLORS, type AssociativeEdge } from "@/core/types";
+import { cyclePolarity, getEdgePolarity } from "@/core/synthesis-engine";
+import {
+  EDGE_COLORS,
+  POLARITY_COLORS,
+  type AssociativeEdge,
+  type EdgePolarity,
+} from "@/core/types";
 import { DIM_OPACITY, useEdgeTrailState } from "@/store/trail-selectors";
 import { useMemexStore, type MemexStore } from "@/store/useMemexStore";
 
 const SPRING = { type: "spring", stiffness: 300, damping: 28 } as const;
 
 const selectSelectGhost = (s: MemexStore) => s.selectGhostDiscovery;
+const selectTogglePolarity = (s: MemexStore) => s.toggleEdgePolarity;
+
+/**
+ * Polarity badges on real edges. Deliberately unlike the ghost "⚡ X% SYNAPSE"
+ * pill (fully rounded, with a confidence percentage, only on derived discovery
+ * edges): these are square-cornered stamps without a percentage.
+ */
+const POLARITY_BADGE: Record<EdgePolarity, { label: string; word: string }> = {
+  supports: { label: "→ SUPPORTS", word: "supports" },
+  refutes: { label: "≠ REFUTES", word: "refutes" },
+  synthesizes: { label: "⚡ SYNAPSE", word: "synthesizes" },
+};
 
 /** Fallback card size before React Flow has measured the node. */
 const DEFAULT_W = 280;
@@ -90,6 +108,7 @@ function AssociativePulseEdgeImpl({
     ),
   );
   const selectGhost = useMemexStore(selectSelectGhost);
+  const togglePolarity = useMemexStore(selectTogglePolarity);
   const sourceNode = useInternalNode(source);
   const targetNode = useInternalNode(target);
 
@@ -120,7 +139,16 @@ function AssociativePulseEdgeImpl({
   });
 
   const origin = data?.origin ?? "human";
-  const color = EDGE_COLORS[origin];
+  // Derived ghost discovery edges never carry a polarity; real edges default to "supports".
+  const polarity: EdgePolarity = isSynapse ? "supports" : getEdgePolarity({ data });
+  // "supports" keeps the origin color (amber human, violet ghost), so edges
+  // without a polarity look exactly as before.
+  const color = polarity === "supports" ? EDGE_COLORS[origin] : POLARITY_COLORS[polarity];
+  const refutes = polarity === "refutes";
+  const synthesizes = polarity === "synthesizes";
+  const badgeVisible = !isSynapse && (polarity !== "supports" || hovered || selected === true);
+  const badge = POLARITY_BADGE[polarity];
+  const nextWord = POLARITY_BADGE[cyclePolarity(polarity)].word;
   const strength = Math.min(1, Math.max(0, data?.strength ?? 0.5));
   const rationale = data?.rationale?.trim() ?? "";
   // Stronger associations pulse faster (4.2s down to 1.8s per traverse).
@@ -158,10 +186,12 @@ function AssociativePulseEdgeImpl({
           stroke: color,
           strokeWidth: active ? 1.75 : 1,
           strokeOpacity: active ? 1 : 0.7,
+          ...(refutes ? { strokeDasharray: "7 5" } : {}),
           transition: "stroke-width 150ms ease, stroke-opacity 150ms ease",
         }}
       />
-      {/* Thought pulse: a short bright dash travelling along the stroke. */}
+      {/* Thought pulse: a short bright dash travelling along the stroke.
+          supports: forward. refutes: counter-flow. synthesizes: two offset pulses. */}
       <path
         d={path}
         fill="none"
@@ -170,11 +200,24 @@ function AssociativePulseEdgeImpl({
         strokeLinecap="round"
         pathLength={100}
         strokeDasharray="5 95"
-        className="memex-edge-pulse"
+        className={refutes ? "memex-edge-pulse-reverse" : "memex-edge-pulse"}
         style={{ animationDuration: `${pulseSeconds}s` }}
         pointerEvents="none"
       />
-
+      {synthesizes ? (
+        <path
+          d={path}
+          fill="none"
+          stroke={color}
+          strokeWidth={2.5}
+          strokeLinecap="round"
+          pathLength={100}
+          strokeDasharray="5 95"
+          className="memex-edge-pulse"
+          style={{ animationDuration: `${pulseSeconds}s`, animationDelay: `${-pulseSeconds / 2}s` }}
+          pointerEvents="none"
+        />
+      ) : null}
       <EdgeLabelRenderer>
         {isSynapse ? (
           <div
@@ -214,11 +257,70 @@ function AssociativePulseEdgeImpl({
             </motion.button>
           </div>
         ) : null}
+        {!isSynapse ? (
+          <div
+            className="nodrag nopan"
+            style={{
+              position: "absolute",
+              transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
+              pointerEvents: "none",
+              zIndex: 1002,
+              opacity: trailState === "dim" ? DIM_OPACITY : 1,
+            }}
+          >
+            <AnimatePresence>
+              {badgeVisible ? (
+                <motion.button
+                  key="polarity-badge"
+                  type="button"
+                  initial={{ opacity: 0, scale: 0.85 }}
+                  animate={{ opacity: polarity === "supports" ? 0.85 : 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.85 }}
+                  whileHover={{ scale: 1.08 }}
+                  whileTap={{ scale: 0.92 }}
+                  transition={SPRING}
+                  onClick={(ev) => {
+                    ev.stopPropagation();
+                    togglePolarity(id);
+                  }}
+                  onMouseEnter={() => setHovered(true)}
+                  onMouseLeave={() => setHovered(false)}
+                  aria-label={`Edge polarity: ${badge.word}. Activate to change to ${nextWord}.`}
+                  title={`${badge.word} (click for ${nextWord})`}
+                  data-polarity={polarity}
+                  className="cursor-pointer whitespace-nowrap bg-card-surface px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2"
+                  style={{
+                    pointerEvents: "all",
+                    color,
+                    border: `1px solid ${color}`,
+                    borderRadius: 2,
+                    outlineColor: color,
+                    boxShadow:
+                      polarity === "supports"
+                        ? "0 4px 14px rgba(0, 0, 0, 0.65)"
+                        : `0 4px 14px rgba(0, 0, 0, 0.65), 0 0 10px ${color}55`,
+                  }}
+                >
+                  <motion.span
+                    key={polarity}
+                    initial={{ scale: 0.7 }}
+                    animate={{ scale: 1 }}
+                    transition={SPRING}
+                    style={{ display: "inline-block" }}
+                  >
+                    {badge.label}
+                  </motion.span>
+                </motion.button>
+              ) : null}
+            </AnimatePresence>
+          </div>
+        ) : null}
         <div
           className="nodrag nopan"
           style={{
             position: "absolute",
-            transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
+            // Anchored just below the midpoint so it never covers the polarity badge.
+            transform: `translate(-50%, 0) translate(${labelX}px, ${labelY + 18}px)`,
             pointerEvents: "none",
             zIndex: 1000,
           }}

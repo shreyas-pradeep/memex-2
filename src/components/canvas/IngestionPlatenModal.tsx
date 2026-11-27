@@ -11,6 +11,13 @@ import {
 import { createPortal } from "react-dom";
 import { motion } from "framer-motion";
 import {
+  applyArxivMetadata,
+  isArxivPaper,
+  isDoiLike,
+  parseArxivId,
+  type ArxivPaper,
+} from "@/core/arxiv";
+import {
   MAX_SOURCE_BYTES,
   distillSourceText,
   parsePastedText,
@@ -20,7 +27,7 @@ import {
 } from "@/core/ingestion-engine";
 import { useMemexStore } from "@/store/useMemexStore";
 
-type Tab = "file" | "text";
+type Tab = "file" | "text" | "arxiv";
 
 /** Minimum time the scan bar sweeps, so the platen feels like a physical pass. */
 export const PLATEN_SCAN_MS = 900;
@@ -47,6 +54,10 @@ function ModalBody({ onClose, onIngested }: ModalProps) {
   const [text, setText] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
+  const [arxivInput, setArxivInput] = useState("");
+  const [paper, setPaper] = useState<ArxivPaper | null>(null);
+  const [resolving, setResolving] = useState(false);
+  const abortRef = useRef<AbortController | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const pickerRef = useRef<HTMLInputElement>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -56,6 +67,7 @@ function ModalBody({ onClose, onIngested }: ModalProps) {
     dialogRef.current?.focus();
     return () => {
       clearTimeout(timerRef.current);
+      abortRef.current?.abort(); // no request outlives the modal
       previous?.focus();
     };
   }, []);
@@ -89,12 +101,68 @@ function ModalBody({ onClose, onIngested }: ModalProps) {
     if (dropped) void loadFile(dropped);
   };
 
+  const resolveArxiv = async () => {
+    if (resolving) return;
+    setPaper(null);
+    const id = parseArxivId(arxivInput);
+    if (id === undefined) {
+      setError(
+        isDoiLike(arxivInput)
+          ? "DOI lookup is not supported yet. Enter an arXiv ID or an arxiv.org URL."
+          : "Not a valid arXiv ID or URL. Try 1706.03762, arXiv:1706.03762v5 or cs/0112017.",
+      );
+      return;
+    }
+    setError(null);
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+    setResolving(true);
+    try {
+      const res = await fetch(`/api/arxiv?id=${encodeURIComponent(id)}`, {
+        signal: controller.signal,
+      });
+      if (!res.ok) {
+        setError(
+          res.status === 404
+            ? `No paper found for arXiv:${id}.`
+            : res.status === 400
+              ? "Not a valid arXiv ID or URL."
+              : res.status === 429
+                ? "Too many lookups. Wait a minute and try again."
+                : "arXiv could not be reached. Try again shortly.",
+        );
+        return;
+      }
+      const body: unknown = await res.json();
+      if (!isArxivPaper(body)) {
+        setError("arXiv returned an unreadable response.");
+        return;
+      }
+      setPaper(body);
+    } catch {
+      if (!controller.signal.aborted) setError("Network error. Check your connection and try again.");
+    } finally {
+      if (abortRef.current === controller) {
+        abortRef.current = null;
+        setResolving(false);
+      }
+    }
+  };
+
   const scan = () => {
     if (scanning) return;
+    const resolved = tab === "arxiv" ? paper : null;
     const parsed: ParsedSource | null =
-      tab === "file" ? (file?.parsed ?? null) : parsePastedText(title, text);
+      tab === "file"
+        ? (file?.parsed ?? null)
+        : tab === "arxiv"
+          ? resolved
+            ? parsePastedText(resolved.title, resolved.abstract !== "" ? resolved.abstract : resolved.title)
+            : null
+          : parsePastedText(title, text);
     if (parsed === null) {
-      setError("Drop or choose a file first.");
+      setError(tab === "arxiv" ? "Resolve a paper first." : "Drop or choose a file first.");
       return;
     }
     if (!parsed.ok) {
@@ -109,7 +177,8 @@ function ModalBody({ onClose, onIngested }: ModalProps) {
         existingIds: nodes.map((n) => n.id),
         createdAt: new Date().toISOString(),
       });
-      const ids = ingestSource(distilled.nodes, distilled.edges);
+      const cards = resolved ? applyArxivMetadata(distilled.nodes, resolved) : distilled.nodes;
+      const ids = ingestSource(cards, distilled.edges);
       onIngested(ids);
       onClose();
     }, PLATEN_SCAN_MS);
@@ -151,10 +220,13 @@ function ModalBody({ onClose, onIngested }: ModalProps) {
       aria-selected={tab === id}
       aria-controls={`platen-panel-${id}`}
       onClick={() => {
+        abortRef.current?.abort();
+        abortRef.current = null;
+        setResolving(false);
         setTab(id);
         setError(null);
       }}
-      className="flex-1 cursor-pointer rounded-xl border px-3 py-2 font-mono text-[11px] font-semibold uppercase tracking-[0.14em] transition-colors duration-100"
+      className="min-w-[120px] flex-1 cursor-pointer rounded-xl border px-3 py-2 font-mono text-[11px] font-semibold uppercase tracking-[0.14em] transition-colors duration-100"
       style={
         tab === id
           ? { color: "#090A0F", background: "#FFB236", borderColor: "#FFB236" }
@@ -165,7 +237,8 @@ function ModalBody({ onClose, onIngested }: ModalProps) {
     </button>
   );
 
-  const canScan = tab === "file" ? file !== null : text.trim() !== "";
+  const canScan =
+    tab === "file" ? file !== null : tab === "arxiv" ? paper !== null : text.trim() !== "";
 
   return (
     <div
@@ -193,9 +266,10 @@ function ModalBody({ onClose, onIngested }: ModalProps) {
           </h2>
         </div>
 
-        <div role="tablist" aria-label="Source type" className="flex gap-2">
+        <div role="tablist" aria-label="Source type" className="flex flex-wrap gap-2">
           {tabButton("file", "File Drop")}
           {tabButton("text", "Direct Raw Text / Paper Abstract")}
+          {tabButton("arxiv", "arXiv / DOI")}
         </div>
 
         {tab === "file" ? (
@@ -246,6 +320,68 @@ function ModalBody({ onClose, onIngested }: ModalProps) {
                 e.target.value = "";
               }}
             />
+          </div>
+        ) : tab === "arxiv" ? (
+          <div
+            role="tabpanel"
+            id="platen-panel-arxiv"
+            aria-labelledby="platen-tab-arxiv"
+            className="flex flex-col gap-3"
+          >
+            <label className="flex flex-col gap-1">
+              <span className={LABEL_CLASS}>arXiv ID or URL</span>
+              <div className="flex gap-2">
+                <input
+                  value={arxivInput}
+                  onChange={(e) => {
+                    setArxivInput(e.target.value);
+                    setPaper(null);
+                    setError(null);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      void resolveArxiv();
+                    }
+                  }}
+                  placeholder="1706.03762 or https://arxiv.org/abs/1706.03762"
+                  spellCheck={false}
+                  autoComplete="off"
+                  className={`${FIELD_CLASS} font-mono text-[13px]`}
+                />
+                <button
+                  type="button"
+                  onClick={() => void resolveArxiv()}
+                  disabled={resolving || arxivInput.trim() === ""}
+                  aria-busy={resolving}
+                  className="shrink-0 cursor-pointer rounded-xl border border-[#FFB236] bg-[#141721] px-3 py-2 font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-[#FFB236] hover:bg-[#FFB236]/10 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {resolving ? "Resolving…" : "Resolve Paper"}
+                </button>
+              </div>
+            </label>
+            <p className="font-mono text-[11px] text-text-muted">
+              Resolves arXiv papers only. DOI lookup is not supported yet.
+            </p>
+            {paper ? (
+              <div
+                aria-label="Resolved paper"
+                className="rounded-xl border border-[rgba(255,178,54,0.18)] bg-[#090A0F] px-3 py-2"
+              >
+                <div className="font-mono text-[10px] tracking-wider text-text-muted">
+                  arXiv:{paper.arxivId}
+                  {paper.year !== undefined ? ` · ${paper.year}` : ""}
+                </div>
+                <div className="font-serif text-[15px] font-semibold text-text-primary">
+                  {paper.title}
+                </div>
+                {paper.authors.length > 0 ? (
+                  <div className="mt-0.5 text-[12px] leading-snug text-text-muted">
+                    {paper.authors.join(", ")}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
           </div>
         ) : (
           <div
@@ -310,7 +446,11 @@ function ModalBody({ onClose, onIngested }: ModalProps) {
           </button>
         </div>
         <div role="status" aria-live="polite" className="sr-only">
-          {scanning ? "Scanning source into the platen" : ""}
+          {scanning
+            ? "Scanning source into the platen"
+            : resolving
+              ? "Resolving paper from arXiv"
+              : ""}
         </div>
       </motion.div>
     </div>

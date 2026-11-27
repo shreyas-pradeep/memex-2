@@ -8,6 +8,7 @@ import type {
 } from "./types";
 import { removeNodeFromDiscoveries } from "./ghost-engine";
 import { removeNodeFromTrail } from "./trail-engine";
+import { cyclePolarity } from "./synthesis-engine";
 
 /**
  * Pure graph operations for the Memex canvas. Every function returns a new
@@ -100,6 +101,22 @@ export function connectNodes(
     data: { rationale: "", strength: 0.5, ...data, origin },
   };
   return { ...state, edges: [...state.edges, edge] };
+}
+
+/**
+ * Advances the polarity of one real edge (supports -> refutes -> synthesizes ->
+ * supports; no polarity counts as supports). State is unchanged when the edge
+ * does not exist, so display-only ghost synapses (never in `edges`) are never toggled.
+ */
+export function toggleEdgePolarity(state: MemexGraphState, edgeIdToToggle: string): MemexGraphState {
+  const target = state.edges.find((e) => e.id === edgeIdToToggle);
+  if (!target) return state;
+  const base: AssociativeEdgeData = target.data ?? { origin: "human", rationale: "", strength: 0.5 };
+  const next: AssociativeEdge = {
+    ...target,
+    data: { ...base, polarity: cyclePolarity(base.polarity) },
+  };
+  return { ...state, edges: state.edges.map((e) => (e === target ? next : e)) };
 }
 
 /** Removes one ghost discovery (state unchanged when the ID is unknown). */

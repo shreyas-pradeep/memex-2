@@ -1,0 +1,32 @@
+# Implementation Plan: 05-research-intelligence
+
+- [x] 1. Author the spec
+  - Create `requirements.md`, `design.md` and `tasks.md` in `.kiro/specs/05-research-intelligence/`.
+  - _Requirements: 1.1 to 6.3_
+- [x] 2. Extend the canonical types
+  - Add `EdgePolarity`, `POLARITY_COLORS` and optional `polarity` to `src/core/types.ts`; add optional `source`, `pdfUrl`, `authors` to `MemexNodeData`.
+  - _Requirements: 4.1, 4.2, 4.5, 5.10_
+- [x] 3. Implement the pure synthesis engine
+  - Create `src/core/synthesis-engine.ts`: `generateTrailBriefing`, `generateBibTeX`, `escapeBibTeX`, `bibtexKey`, `yamlQuote`, `briefingFilename`, `cyclePolarity`, `getEdgePolarity`.
+  - _Requirements: 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 1.10, 1.11, 2.6, 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 4.2, 4.3_
+- [x] 4. Add polarity to the graph engine and store
+  - Add pure `toggleEdgePolarity` to `src/core/graph-engine.ts` and the store action `toggleEdgePolarity(edgeId)` in `src/store/useMemexStore.ts` (one commit, one persist, unknown id is a no-op).
+  - _Requirements: 4.3, 4.4, 4.5_
+- [x] 5. Style polarity edges
+  - Update `src/components/canvas/AssociativePulseEdge.tsx` (colors, dashed refutes, reverse and double pulses, clickable badges with spring animation, hover-revealed supports badge) and add the reverse pulse keyframes to `src/app/globals.css`.
+  - _Requirements: 4.6, 4.7, 4.8, 4.9, 6.2_
+- [x] 6. Build the export modal and dock button
+  - Create `src/components/canvas/ExportBriefingModal.tsx` (preview, copy with fallback and timer cleanup, download with revoked URL, focus handling) and wire "[⚡ EXPORT BRIEFING]" into `src/components/trails/TrailPlaybackDock.tsx`, pausing dock shortcuts while the modal is open.
+  - _Requirements: 1.1, 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7_
+- [x] 7. Implement the arXiv resolver
+  - Create `src/core/arxiv.ts` (`parseArxivId`, `isDoiLike`, `buildArxivQueryUrl`, `parseArxivAtom`, `isArxivPaper`, `applyArxivMetadata`) and `src/app/api/arxiv/route.ts` (fixed upstream, timeout, size cap, manual redirects, rate limit, generic errors).
+  - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 5.6_
+- [x] 8. Add the arXiv / DOI tab to the Platen modal
+  - Update `src/components/canvas/IngestionPlatenModal.tsx`: third tab, resolve button, loading and inline errors, DOI message, preview, abort on unmount and tab switch, stamping through `applyArxivMetadata`, existing tabs unchanged.
+  - _Requirements: 5.7, 5.8, 5.9, 5.10, 5.11_
+- [x] 9. Property-based and unit tests
+  - Create `src/core/__tests__/synthesis.property.test.ts` (Properties 1 to 3, 200 runs each, hostile text, demo seed snapshot), `arxiv.test.ts` and `arxiv-route.test.ts`.
+  - _Requirements: 1.2, 1.3, 1.7, 1.9, 1.11, 3.1, 3.6, 4.3, 4.4, 4.5, 5.1, 5.2, 5.4, 5.5, 5.6_
+- [x] 10. Verify and commit
+  - Run `npx tsc --noEmit`, `npx vitest run`, `npx eslint src` and `npm run build`; smoke test the built route's 400 paths; commit `feat(spec-05): implement research intelligence and synthesis suite`.
+  - _Requirements: all_

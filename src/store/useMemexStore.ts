@@ -16,6 +16,7 @@ import {
   removeDiscovery,
   removeNodes as removeNodesPure,
   serializeGraph,
+  toggleEdgePolarity as toggleEdgePolarityPure,
 } from "@/core/graph-engine";
 import type {
   AssociativeEdge,
@@ -386,6 +387,12 @@ export interface MemexStore extends MemexGraphState {
     data?: Partial<Omit<AssociativeEdgeData, "origin">>,
   ) => void;
   createTrail: (trail: Trail) => void;
+  /**
+   * Advances a real edge's polarity (supports -> refutes -> synthesizes ->
+   * supports) and persists it. Unknown ids are a no-op; display-only ghost
+   * synapses are not store edges, so they cannot be toggled.
+   */
+  toggleEdgePolarity: (edgeId: string) => void;
   setGhostDiscoveries: (discoveries: GhostDiscovery[]) => void;
   autoLayout: () => void;
 
@@ -602,6 +609,7 @@ export const useMemexStore = create<MemexStore>()((set, get) => {
     connect: (source, target, origin, data) =>
       commit(connectNodes(pick(get()), source, target, origin, data)),
     createTrail: (trail) => commit(createTrailPure(pick(get()), trail)),
+    toggleEdgePolarity: (edgeId) => commit(toggleEdgePolarityPure(pick(get()), edgeId)),
     setGhostDiscoveries: (ghostDiscoveries) =>
       commit({ ...pick(get()), ghostDiscoveries }),
     autoLayout: () => commit(computeAutoLayout(pick(get()))),
