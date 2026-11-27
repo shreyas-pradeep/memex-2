@@ -8,6 +8,9 @@ import type {
 import {
   acceptDiscovery,
   addNode as addNodePure,
+  edgeId as edgeIdOf,
+  snapConnect,
+  areConnected,
   computeAutoLayout,
   connectNodes,
   createTrail as createTrailPure,
@@ -36,11 +39,37 @@ import {
   getNextTrailIndex,
   getPrevTrailIndex,
 } from "@/core/trail-engine";
+import { buildManualTrail, loadTrailState } from "@/core/curators-index";
+import { DEFAULT_CARD_SIZE, nodeRect } from "@/core/card-geometry";
 import {
-  buildManualTrail,
-  curatorDrawerReducer,
-  loadTrailState,
-} from "@/core/curators-index";
+  cassetteRefs,
+  moveCassette as moveCassettePure,
+  resolveCassetteId,
+} from "@/core/cassette-engine";
+import {
+  INITIAL_DOCK,
+  dockForSelection,
+  dockReducer,
+  isTrailsOpen,
+  resolveDockKey,
+  type DockKeyEvent,
+  type DockKeyResult,
+  type DockState,
+  type DockTab,
+} from "@/core/command-dock";
+import {
+  buildMagneticCandidates,
+  findMagneticTarget,
+  sameMagneticTarget,
+  type MagneticTarget,
+} from "@/core/magnetic-engine";
+import { normalizeTag, type SpotlightType } from "@/core/spotlight";
+import {
+  exportMemexBundle,
+  exportObsidianVaultZip,
+  validateAndImportBundle,
+  type BundleImportResult,
+} from "@/core/vault-bundle";
 import {
   DEFAULT_GHOST_THRESHOLD,
   detectGhostSynapses,
@@ -147,7 +176,7 @@ export function persistGraph(state: MemexGraphState): void {
   }
 }
 
-export const DEFAULT_CARD_SIZE = { width: 340, height: 230 } as const;
+export { DEFAULT_CARD_SIZE };
 
 /**
  * Gives cards saved before resizing existed (no `style` size, no `width` /
@@ -275,8 +304,43 @@ const IDLE_PLAYBACK = {
 const IDLE_GHOST = {
   isGhostScanning: false,
   selectedGhostDiscoveryId: null,
+  inspectedEdgeId: null,
   ghostEngineMode: "neural" as GhostEngineMode,
 };
+
+/** Spotlight filters (Spec 09). Session-only: never persisted or exported. */
+const IDLE_SPOTLIGHT = {
+  spotlightQuery: "",
+  spotlightType: "all" as SpotlightType,
+  spotlightTags: [] as string[],
+};
+
+/** Longest spotlight query and most selected tags kept. */
+export const SPOTLIGHT_QUERY_MAX = 200;
+export const SPOTLIGHT_TAGS_MAX = 20;
+/** How long `lastSnapEdgeId` stays set, so the snap pulse can play. */
+export const SNAP_PULSE_MS = 1200;
+let snapTimer: ReturnType<typeof setTimeout> | undefined;
+
+/** Per-drag cache for magnetic snapping: built once at drag start, read per frame. Never React state. */
+interface MagneticSession {
+  nodeId: string;
+  candidates: MagneticTarget[];
+  /** Candidate cards by id (the other cards do not move while one card is dragged). */
+  nodes: Map<string, MemexNode>;
+  /** Index of the dragged card in `nodes`, so a frame finds it in O(1). */
+  hint: number;
+}
+let magneticSession: MagneticSession | null = null;
+
+/** True while a magnetic drag is being tracked (for tests and diagnostics). */
+export function hasMagneticSession(): boolean {
+  return magneticSession !== null;
+}
+
+function sameDock(a: DockState, b: DockState): boolean {
+  return a.open === b.open && a.tab === b.tab;
+}
 
 /** Identity of the graph as the scan sees it: card ids plus connected pairs (ignores drags). */
 function graphSignature(nodes: readonly MemexNode[], edges: readonly AssociativeEdge[]): string {
@@ -325,8 +389,15 @@ async function fetchLiveSuggestions(
 export interface MemexStore extends MemexGraphState {
   /** Session-only: true while the Ghost Engine scan indicator is showing. */
   isGhostScanning: boolean;
-  /** Session-only: discovery open in the Synapse Inspector Drawer. */
+  /** Session-only: discovery open in the Synapse tab of the command dock. */
   selectedGhostDiscoveryId: string | null;
+  /**
+   * Session-only: real edge open in the Synapse tab (Spec 09). Ghost discoveries
+   * use `selectedGhostDiscoveryId`; selecting one clears the other.
+   */
+  inspectedEdgeId: string | null;
+  /** Inspects a real edge (unknown ids and `null` clear it) and opens the Synapse tab. */
+  inspectEdge: (id: string | null) => void;
   /** Session-only: engine that produced the last scan ("live" Gemini or local "neural"). */
   ghostEngineMode: GhostEngineMode;
   /**
@@ -366,12 +437,52 @@ export interface MemexStore extends MemexGraphState {
    */
   isCuratorDrawerOpen: boolean;
   /**
+   * Session-only: the Research Command Dock (Spec 09). `isCuratorDrawerOpen` is
+   * a thin alias of `commandDock.open && commandDock.tab === "trails"`.
+   */
+  commandDock: DockState;
+  /** Session-only: bumped when `/` asks the Spotlight search field for focus. */
+  dockFocusRequest: number;
+  openDockTab: (tab: DockTab) => void;
+  toggleDockTab: (tab: DockTab) => void;
+  collapseDock: () => void;
+  expandDock: () => void;
+  /** Applies a key press through the dock rules and returns what the listener must do. */
+  dispatchDockKey: (event: DockKeyEvent) => DockKeyResult;
+  /**
    * Session-only: bumped by `loadTrailIntoLever` so the camera director glides
    * to stop 1 even when that trail is already active at stop 1.
    */
   trailCameraNonce: number;
   toggleCuratorDrawer: () => void;
   setCuratorDrawerOpen: (open: boolean) => void;
+
+  /** Session-only: the card offer shown while a card is dragged next to a related one. */
+  magneticTarget: MagneticTarget | null;
+  /** Session-only: edge created by the last magnetic snap; clears itself after `SNAP_PULSE_MS`. */
+  lastSnapEdgeId: string | null;
+  /** Starts tracking a drag: scores the card against the canvas once and caches the candidates. */
+  beginMagneticDrag: (nodeId: string) => void;
+  /** Per frame: O(candidates) rectangle checks against the cache; updates state only when the offer changes. */
+  updateMagneticDrag: (nodeId: string) => void;
+  /** Drop: connects to the offered card (like accepting a discovery) and clears the session. */
+  endMagneticDrag: (nodeId: string) => { snapped: boolean; edgeId?: string };
+  /** Drops the cache and the offer without connecting (drag cancelled, unmount). */
+  cancelMagneticDrag: () => void;
+  /**
+   * Moves every card of a cassette by `(dx, dy)` in one update. Persists only
+   * when `commit` is true (the end of the drag, which persists even with a zero delta).
+   */
+  moveCassette: (cassetteId: string, dx: number, dy: number, options?: { commit?: boolean }) => void;
+
+  /** Session-only spotlight filters (Spec 09). */
+  spotlightQuery: string;
+  spotlightType: SpotlightType;
+  spotlightTags: string[];
+  setSpotlightQuery: (query: string) => void;
+  setSpotlightType: (type: SpotlightType) => void;
+  toggleSpotlightTag: (tag: string) => void;
+  clearSpotlight: () => void;
 
   /** True once `hydrate()` has run on the client. */
   hydrated: boolean;
@@ -466,6 +577,16 @@ export interface MemexStore extends MemexGraphState {
   exportJson: () => string;
   /** Replaces the graph from JSON; throws (state untouched) when the JSON is invalid. */
   importJson: (json: string) => void;
+  /** The portable `.memex` bundle (Spec 09): graph plus ghost settings, never any API key. */
+  exportBundleJson: () => string;
+  /**
+   * Validates a bundle (or a legacy graph export) and, when it is valid,
+   * replaces the graph like `importJson` does and restores the dismissed ghost
+   * ids. On failure nothing changes. Never throws.
+   */
+  importBundle: (json: string) => BundleImportResult;
+  /** The vault as an Obsidian-ready ZIP (one Markdown file per card). */
+  exportObsidianZip: () => Promise<Blob>;
 }
 
 export const useMemexStore = create<MemexStore>()((set, get) => {
@@ -488,16 +609,59 @@ export const useMemexStore = create<MemexStore>()((set, get) => {
       selected !== null && !next.ghostDiscoveries.some((g) => g.id === selected)
         ? { selectedGhostDiscoveryId: null }
         : {};
+    const inspected = current.inspectedEdgeId;
+    const inspection =
+      inspected !== null && !next.edges.some((e) => e.id === inspected)
+        ? { inspectedEdgeId: null }
+        : {};
     const trailId = current.activeTrailId;
     if (trailId !== null) {
       const trail = next.trails.find((t) => t.id === trailId);
       const index = trail ? clampTrailIndex(current.activeTrailIndex, trail.nodeIds.length) : -1;
-      if (index === -1) set({ ...next, ...IDLE_PLAYBACK, ...selection });
-      else set({ ...next, activeTrailIndex: index, ...selection });
+      if (index === -1) set({ ...next, ...IDLE_PLAYBACK, ...selection, ...inspection });
+      else set({ ...next, activeTrailIndex: index, ...selection, ...inspection });
     } else {
-      set({ ...next, ...selection });
+      set({ ...next, ...selection, ...inspection });
     }
+    if (magneticSession !== null) reconcileMagneticSession(next);
     persistGraph(next);
+  };
+
+  /** Sets the dock and its Spec 08 alias together; skips the write when nothing changes. */
+  const applyDock = (dock: DockState) => {
+    const current = get();
+    const alias = isTrailsOpen(dock);
+    if (sameDock(dock, current.commandDock) && current.isCuratorDrawerOpen === alias) return;
+    set({ commandDock: dock, isCuratorDrawerOpen: alias });
+  };
+
+  /** Ends the magnetic session without connecting anything. */
+  const cancelMagnetic = () => {
+    magneticSession = null;
+    if (get().magneticTarget !== null) set({ magneticTarget: null });
+  };
+
+  /** Keeps the session valid when the graph changes under a drag (card deleted, pair connected). */
+  const reconcileMagneticSession = (graph: MemexGraphState) => {
+    const session = magneticSession;
+    if (session === null) return;
+    const ids = new Set(graph.nodes.map((n) => n.id));
+    if (!ids.has(session.nodeId)) return cancelMagnetic();
+    const candidates = session.candidates.filter(
+      (c) => ids.has(c.targetId) && !areConnected(graph.edges, c.sourceId, c.targetId),
+    );
+    if (candidates.length === session.candidates.length) return;
+    session.candidates = candidates;
+    const target = get().magneticTarget;
+    if (target !== null && !candidates.includes(target)) set({ magneticTarget: null });
+  };
+
+  /** Replaces the graph for an import: the same session resets as `importJson`. */
+  const replaceGraph = (graph: MemexGraphState) => {
+    cancelGhostAutoScan();
+    cancelMagnetic();
+    set({ ...graph, ...IDLE_PLAYBACK, ...IDLE_GHOST, ...IDLE_SPOTLIGHT });
+    persistGraph(graph);
   };
 
   return {
@@ -508,13 +672,137 @@ export const useMemexStore = create<MemexStore>()((set, get) => {
     isTimelineOpen: true,
     highlightedNodeId: null,
     isCuratorDrawerOpen: false,
+    commandDock: INITIAL_DOCK,
+    dockFocusRequest: 0,
     trailCameraNonce: 0,
+    magneticTarget: null,
+    lastSnapEdgeId: null,
+    ...IDLE_SPOTLIGHT,
 
-    toggleCuratorDrawer: () =>
-      set({ isCuratorDrawerOpen: curatorDrawerReducer(get().isCuratorDrawerOpen, { type: "toggle" }) }),
+    // Spec 08 aliases: "the drawer" is the dock showing the Trails tab. The
+    // alias flag decides the direction, so a flag set by hand stays consistent.
+    toggleCuratorDrawer: () => get().setCuratorDrawerOpen(!get().isCuratorDrawerOpen),
     setCuratorDrawerOpen: (open) => {
-      const next = curatorDrawerReducer(get().isCuratorDrawerOpen, { type: open ? "open" : "close" });
-      if (next !== get().isCuratorDrawerOpen) set({ isCuratorDrawerOpen: next });
+      const dock = get().commandDock;
+      applyDock(
+        open
+          ? dockReducer(dock, { type: "openTab", tab: "trails" })
+          : isTrailsOpen(dock)
+            ? dockReducer(dock, { type: "collapse" })
+            : dock,
+      );
+    },
+    openDockTab: (tab) => applyDock(dockReducer(get().commandDock, { type: "openTab", tab })),
+    toggleDockTab: (tab) => applyDock(dockReducer(get().commandDock, { type: "toggleTab", tab })),
+    collapseDock: () => applyDock(dockReducer(get().commandDock, { type: "collapse" })),
+    expandDock: () => applyDock(dockReducer(get().commandDock, { type: "expand" })),
+    dispatchDockKey: (event) => {
+      const result = resolveDockKey(get().commandDock, event);
+      applyDock(result.state);
+      if (result.focusSpotlightInput) set({ dockFocusRequest: get().dockFocusRequest + 1 });
+      return result;
+    },
+
+    beginMagneticDrag: (nodeId) => {
+      const { nodes, edges } = get();
+      cancelMagnetic();
+      const hint = nodes.findIndex((n) => n.id === nodeId);
+      if (hint === -1) return;
+      // React Flow drags every selected card together: no target for a group.
+      if (nodes[hint].selected === true && nodes.filter((n) => n.selected === true).length > 1) return;
+      const candidates = buildMagneticCandidates(nodeId, nodes, edges);
+      const wanted = new Set(candidates.map((c) => c.targetId));
+      magneticSession = {
+        nodeId,
+        candidates,
+        nodes: new Map(nodes.filter((n) => wanted.has(n.id)).map((n) => [n.id, n])),
+        hint,
+      };
+    },
+
+    updateMagneticDrag: (nodeId) => {
+      const session = magneticSession;
+      if (session === null || session.nodeId !== nodeId) {
+        if (get().magneticTarget !== null) set({ magneticTarget: null });
+        return;
+      }
+      const nodes = get().nodes;
+      let node = nodes[session.hint];
+      if (node === undefined || node.id !== nodeId) {
+        session.hint = nodes.findIndex((n) => n.id === nodeId);
+        if (session.hint === -1) return cancelMagnetic();
+        node = nodes[session.hint];
+      }
+      const rect = nodeRect(node);
+      const target = rect === null ? null : findMagneticTarget(rect, session.candidates, session.nodes);
+      if (!sameMagneticTarget(target, get().magneticTarget)) set({ magneticTarget: target });
+    },
+
+    endMagneticDrag: (nodeId) => {
+      const session = magneticSession;
+      const target = get().magneticTarget;
+      magneticSession = null;
+      if (session === null || session.nodeId !== nodeId || target === null || target.sourceId !== nodeId) {
+        if (target !== null) set({ magneticTarget: null });
+        return { snapped: false };
+      }
+      const graph = pick(get());
+      const next = snapConnect(graph, target.sourceId, target.targetId, {
+        rationale: target.rationale,
+        strength: target.affinity,
+      });
+      if (next === graph) {
+        set({ magneticTarget: null });
+        return { snapped: false };
+      }
+      commit(next);
+      const edgeId = edgeIdOf(target.sourceId, target.targetId, "human");
+      set({ magneticTarget: null, lastSnapEdgeId: edgeId });
+      if (snapTimer !== undefined) clearTimeout(snapTimer);
+      snapTimer = setTimeout(() => {
+        snapTimer = undefined;
+        if (get().lastSnapEdgeId === edgeId) set({ lastSnapEdgeId: null });
+      }, SNAP_PULSE_MS);
+      return { snapped: true, edgeId };
+    },
+
+    cancelMagneticDrag: () => cancelMagnetic(),
+
+    moveCassette: (cassetteId, dx, dy, options) => {
+      const state = get();
+      if (!state.nodes.some((n) => n.data.cassetteId === cassetteId)) return;
+      const nodes = moveCassettePure(state.nodes, cassetteId, dx, dy);
+      if (options?.commit === true) {
+        const graph = { ...pick(state), nodes };
+        // The end of a drag persists even when the last frame moved nothing.
+        if (nodes === state.nodes) persistGraph(graph);
+        else commit(graph);
+      } else if (nodes !== state.nodes) {
+        set({ nodes });
+      }
+    },
+
+    setSpotlightQuery: (query) => {
+      const next = query.slice(0, SPOTLIGHT_QUERY_MAX);
+      if (next !== get().spotlightQuery) set({ spotlightQuery: next });
+    },
+    setSpotlightType: (type) => {
+      const valid: readonly SpotlightType[] = ["all", "note", "quote", "artifact", "ghost"];
+      if (valid.includes(type) && type !== get().spotlightType) set({ spotlightType: type });
+    },
+    toggleSpotlightTag: (tag) => {
+      const key = normalizeTag(tag);
+      if (key === "") return;
+      const tags = get().spotlightTags;
+      if (tags.includes(key)) return set({ spotlightTags: tags.filter((t) => t !== key) });
+      if (tags.length >= SPOTLIGHT_TAGS_MAX) return;
+      set({ spotlightTags: [...tags, key] });
+    },
+    clearSpotlight: () => {
+      const s = get();
+      if (s.spotlightQuery !== "" || s.spotlightType !== "all" || s.spotlightTags.length > 0) {
+        set({ ...IDLE_SPOTLIGHT, spotlightTags: [] });
+      }
     },
 
     toggleTimeline: () => set({ isTimelineOpen: !get().isTimelineOpen }),
@@ -530,6 +818,7 @@ export const useMemexStore = create<MemexStore>()((set, get) => {
 
     hydrate: () => {
       cancelGhostAutoScan();
+      cancelMagnetic();
       set({
         ...(loadPersistedGraph() ?? freshSeed()),
         ...IDLE_PLAYBACK,
@@ -606,10 +895,25 @@ export const useMemexStore = create<MemexStore>()((set, get) => {
     ingestSource: (incoming, incomingEdges) => {
       let graph = pick(get());
       const added: string[] = [];
+      // Cassette ids are re-checked against the canvas at insertion time (the
+      // check is idempotent when the platen already resolved them).
+      const existingCassettes = cassetteRefs(graph.nodes);
+      const cassetteMap = new Map<string, string>();
       for (const node of incoming) {
+        const cid = node.data.cassetteId;
+        if (cid !== undefined && !cassetteMap.has(cid)) {
+          cassetteMap.set(cid, resolveCassetteId(cid, node.data.cassetteTitle ?? cid, existingCassettes));
+        }
+      }
+      for (const node of incoming) {
+        const cid = node.data.cassetteId;
         const fresh: MemexNode = {
           ...node,
-          data: { ...node.data, archivalId: nextArchivalId(graph.nodes) },
+          data: {
+            ...node.data,
+            archivalId: nextArchivalId(graph.nodes),
+            ...(cid !== undefined ? { cassetteId: cassetteMap.get(cid) ?? cid } : {}),
+          },
         };
         const next = addNodePure(graph, fresh);
         if (next !== graph) added.push(node.id);
@@ -742,7 +1046,26 @@ export const useMemexStore = create<MemexStore>()((set, get) => {
 
     selectGhostDiscovery: (id) => {
       const known = id !== null && get().ghostDiscoveries.some((g) => g.id === id);
-      set({ selectedGhostDiscoveryId: known ? id : null });
+      if (!known) return set({ selectedGhostDiscoveryId: null });
+      const dock = dockForSelection(get().commandDock, { selectedGhostDiscoveryId: id, inspectedEdgeId: null });
+      set({
+        selectedGhostDiscoveryId: id,
+        inspectedEdgeId: null,
+        commandDock: dock,
+        isCuratorDrawerOpen: isTrailsOpen(dock),
+      });
+    },
+
+    inspectEdge: (id) => {
+      const known = id !== null && get().edges.some((e) => e.id === id);
+      if (!known) return set({ inspectedEdgeId: null });
+      const dock = dockForSelection(get().commandDock, { selectedGhostDiscoveryId: null, inspectedEdgeId: id });
+      set({
+        inspectedEdgeId: id,
+        selectedGhostDiscoveryId: null,
+        commandDock: dock,
+        isCuratorDrawerOpen: isTrailsOpen(dock),
+      });
     },
 
     acceptGhostDiscovery: (id) => commit(acceptDiscovery(pick(get()), id)),
@@ -850,8 +1173,11 @@ export const useMemexStore = create<MemexStore>()((set, get) => {
     loadTrailIntoLever: (trailId) => {
       const lever = loadTrailState(get().trails, trailId);
       if (lever === null) return;
+      const dock = get().commandDock;
+      const closed = isTrailsOpen(dock) ? dockReducer(dock, { type: "collapse" }) : dock;
       set({
         ...lever,
+        commandDock: closed,
         isCuratorDrawerOpen: false,
         trailCameraNonce: get().trailCameraNonce + 1,
       });
@@ -881,18 +1207,51 @@ export const useMemexStore = create<MemexStore>()((set, get) => {
     resetToSeed: () => {
       const seed = freshSeed();
       cancelGhostAutoScan();
+      cancelMagnetic();
       clearDismissedGhostIds();
-      set({ ...seed, ...IDLE_PLAYBACK, ...IDLE_GHOST });
+      set({ ...seed, ...IDLE_PLAYBACK, ...IDLE_GHOST, ...IDLE_SPOTLIGHT });
       persistGraph(seed);
     },
 
     exportJson: () => serializeGraph(toPersistable(pick(get()))),
 
     importJson: (json) => {
-      const graph = withDefaultSizes(deserializeGraph(json));
-      cancelGhostAutoScan();
-      set({ ...graph, ...IDLE_PLAYBACK, ...IDLE_GHOST });
-      persistGraph(graph);
+      replaceGraph(withDefaultSizes(deserializeGraph(json)));
+    },
+
+    exportBundleJson: () => {
+      const state = get();
+      return exportMemexBundle(
+        {
+          ...toPersistable(pick(state)),
+          ghostSettings: {
+            engine: state.ghostEngineMode,
+            threshold: DEFAULT_GHOST_THRESHOLD,
+            dismissedDiscoveryIds: loadDismissedGhostIds(),
+          },
+        },
+        { exportedAt: new Date().toISOString() },
+      );
+    },
+
+    importBundle: (json) => {
+      const result = validateAndImportBundle(json);
+      if (!result.ok) return result;
+      replaceGraph(withDefaultSizes(result.state));
+      // A bundle carries its own dismissals; a legacy graph file carries none, so keep ours.
+      if (result.version !== "1.x") {
+        if (result.ghostSettings.dismissedDiscoveryIds.length > 0) {
+          saveDismissedGhostIds(result.ghostSettings.dismissedDiscoveryIds);
+        } else {
+          clearDismissedGhostIds();
+        }
+      }
+      return result;
+    },
+
+    exportObsidianZip: () => {
+      const { nodes, edges } = get();
+      return exportObsidianVaultZip(nodes, edges, { modified: new Date().toISOString() });
     },
   };
 });

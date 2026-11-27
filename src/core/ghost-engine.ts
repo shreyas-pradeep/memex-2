@@ -667,38 +667,121 @@ export function scoreGhostPairs(nodes: readonly MemexNode[]): GhostPairScore[] {
   const sorted = sortedUniqueNodes(nodes);
   const n = sorted.length;
   if (n < 2) return [];
-  const tfs = sorted.map((node) => termFrequencies(node.data));
-  const df = new Map<string, number>();
-  for (const tf of tfs) for (const term of tf.keys()) df.set(term, (df.get(term) ?? 0) + 1);
-  const vectors: TermVector[] = tfs.map(
-    (tf) =>
-      new Map([...tf].map(([term, f]) => [term, f * Math.log(1 + n / (df.get(term) ?? 1))])),
-  );
-  const tags = sorted.map((node) => normalizedTags(node.data));
-  const concepts = sorted.map((node, i) => conceptsOfCard(node.data, tfs[i].keys()));
-  const years = sorted.map((node) => getEventYear(node.data));
-
+  const features = prepareCorpusFeatures(sorted);
   const out: GhostPairScore[] = [];
   for (let i = 0; i < n; i++) {
     for (let j = i + 1; j < n; j++) {
-      const sharedConcepts = sharedConceptIds(concepts[i], concepts[j]);
-      const base = clamp01(
-        COSINE_WEIGHT * Math.sqrt(computeCosineSimilarity(vectors[i], vectors[j])) +
-          CONCEPT_WEIGHT * ochiai(concepts[i], concepts[j]) +
-          TAG_WEIGHT * jaccard(tags[i], tags[j]),
-      );
-      const boost = crossEraBoost(years[i], years[j], sharedConcepts.length);
-      out.push({
-        sourceId: sorted[i].id,
-        targetId: sorted[j].id,
-        base,
-        boost,
-        score: clamp01(base + boost),
-        sharedConcepts,
-      });
+      out.push(scorePreparedPair(sorted[i].id, sorted[j].id, features[i], features[j]));
     }
   }
   return out;
+}
+
+/** Per-card features the pair score needs, computed once per corpus. */
+interface CardFeatures {
+  vector: TermVector;
+  tags: ReadonlySet<string>;
+  concepts: ReadonlySet<string>;
+  year: number | null;
+}
+
+/** Features of cards that are already sorted by id and unique (TF-IDF needs the whole corpus). */
+function prepareCorpusFeatures(sorted: readonly MemexNode[]): CardFeatures[] {
+  const n = sorted.length;
+  const tfs = sorted.map((node) => termFrequencies(node.data));
+  const df = new Map<string, number>();
+  for (const tf of tfs) for (const term of tf.keys()) df.set(term, (df.get(term) ?? 0) + 1);
+  return sorted.map((node, i) => ({
+    vector: new Map(
+      [...tfs[i]].map(([term, f]) => [term, f * Math.log(1 + n / (df.get(term) ?? 1))]),
+    ),
+    tags: normalizedTags(node.data),
+    concepts: conceptsOfCard(node.data, tfs[i].keys()),
+    year: getEventYear(node.data),
+  }));
+}
+
+/** Score of one pair; `loId` must be the lexicographically smaller id (the scan's order). */
+function scorePreparedPair(
+  loId: string,
+  hiId: string,
+  lo: CardFeatures,
+  hi: CardFeatures,
+): GhostPairScore {
+  const sharedConcepts = sharedConceptIds(lo.concepts, hi.concepts);
+  const base = clamp01(
+    COSINE_WEIGHT * Math.sqrt(computeCosineSimilarity(lo.vector, hi.vector)) +
+      CONCEPT_WEIGHT * ochiai(lo.concepts, hi.concepts) +
+      TAG_WEIGHT * jaccard(lo.tags, hi.tags),
+  );
+  const boost = crossEraBoost(lo.year, hi.year, sharedConcepts.length);
+  return {
+    sourceId: loId,
+    targetId: hiId,
+    base,
+    boost,
+    score: clamp01(base + boost),
+    sharedConcepts,
+  };
+}
+
+/**
+ * Corpus context for scoring single pairs without rescanning the canvas: the
+ * TF-IDF vectors, tag sets, concept sets and years of every card, built once
+ * (`buildAffinityContext`). Opaque to callers; immutable once built.
+ */
+export interface AffinityContext {
+  readonly size: number;
+  readonly features: ReadonlyMap<string, CardFeatures>;
+}
+
+/** Builds the context `pairAffinity` needs. O(corpus); call once per drag or scan, not per frame. */
+export function buildAffinityContext(nodes: readonly MemexNode[]): AffinityContext {
+  const sorted = sortedUniqueNodes(nodes);
+  const features = prepareCorpusFeatures(sorted);
+  return {
+    size: sorted.length,
+    features: new Map(sorted.map((node, i) => [node.id, features[i]])),
+  };
+}
+
+/** Affinity of one pair under a corpus context. */
+export interface PairAffinity {
+  /** Raw score in `[0, 1]`, identical to `scoreGhostPairs` for the same corpus. */
+  score: number;
+  /**
+   * Calibrated confidence (the X% on synapse pills): `calibrateGhostConfidence(score)`
+   * within `[0.78, 0.96]` when the pair passes the detection threshold, else `0`.
+   */
+  affinity: number;
+  /** Concept ids both cards touch, sorted. */
+  sharedConcepts: string[];
+}
+
+/**
+ * Affinity of the pair (`a`, `b`) against `ctx`: the same numbers `detectGhostSynapses`
+ * uses, without scanning every pair. A card paired with itself, or a card that
+ * is not in the corpus, scores `0`. Symmetric in `a` and `b`. Pure.
+ */
+export function pairAffinity(
+  a: Pick<MemexNode, "id">,
+  b: Pick<MemexNode, "id">,
+  ctx: AffinityContext,
+  threshold: number = DEFAULT_GHOST_THRESHOLD,
+): PairAffinity {
+  const none: PairAffinity = { score: 0, affinity: 0, sharedConcepts: [] };
+  if (a.id === b.id) return none;
+  const [loId, hiId] = cmp(a.id, b.id) <= 0 ? [a.id, b.id] : [b.id, a.id];
+  const lo = ctx.features.get(loId);
+  const hi = ctx.features.get(hiId);
+  if (lo === undefined || hi === undefined) return none;
+  const pair = scorePreparedPair(loId, hiId, lo, hi);
+  const passes = pair.score > 0 && pair.score >= threshold;
+  return {
+    score: pair.score,
+    affinity: passes ? calibrateGhostConfidence(pair.score) : 0,
+    sharedConcepts: pair.sharedConcepts,
+  };
 }
 
 export interface DetectGhostOptions {

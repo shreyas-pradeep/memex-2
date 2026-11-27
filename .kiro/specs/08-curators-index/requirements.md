@@ -1,5 +1,7 @@
 # Requirements Document: The Curator's Index (Collapsible Left Research & Trail Hub)
 
+> **Superseded by Spec 09 (in part).** The Curator's Index left drawer becomes the **Trails tab of the right-hand Research Command Dock** (`.kiro/specs/09-command-console-and-tactile-engine`). `isCuratorDrawerOpen`, `toggleCuratorDrawer` and `setCuratorDrawerOpen` stay as aliases of `commandDock.open && commandDock.tab === "trails"`. The `T` key now toggles the Trails tab, `Escape` collapses the dock, and the narrow-screen exclusion between the drawer and the Synapse Inspector (Requirement 10.5) no longer applies because both are tabs of one dock. The trail cards, blaze form, delete confirmation, load and briefing behavior are unchanged. Until Phase B of Spec 09 lands, the drawer component still renders.
+
 ## Introduction
 
 The Curator's Index replaces the old top-center Trails dropdown with a left slide-out drawer, "THE CURATOR'S INDEX // REEL ARCHIVE". It lists every trail as a card (title, archetype, summary, era, ordered breadcrumbs), loads a trail into the 1945 Lever in one click, opens the research briefing for any trail, blazes new manual trails from the canvas selection, deletes trails with a two-step confirmation, and starts Sprocket's auto-weave. A top-center button and the `[T]` key open it.

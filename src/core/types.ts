@@ -63,6 +63,14 @@ export type MemexNodeData = {
   pdfUrl?: string;
   /** Authors of the source, in order. Used for bibliography and BibTeX. */
   authors?: string[];
+  /**
+   * Microfiche cassette (Spec 09): every card distilled from one ingested
+   * source shares one id (`cassette-<arxivId>` or `cassette-<8-hex hash>`).
+   * Absent on hand-made cards and old saves.
+   */
+  cassetteId?: string;
+  /** Display title of the cassette (the source title). Absent with `cassetteId`. */
+  cassetteTitle?: string;
 };
 
 export type AssociativeEdgeData = {

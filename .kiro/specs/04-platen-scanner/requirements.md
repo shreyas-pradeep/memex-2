@@ -1,5 +1,7 @@
 # Requirements Document: The Platen Scanner (Multi-Format Document Ingestion Engine)
 
+> **Extended by Spec 09.** Every card distilled from one source now shares a **cassette** (`cassetteId`, `cassetteTitle`): `cassette-<arxivId>` for an arXiv paper, `cassette-<8-hex hash>` otherwise, with a `-2`, `-3` suffix on a collision with another source. Card ids, positions and edges are unchanged.
+
 ## Introduction
 This specification defines the Platen Scanner for Memex 2.0. A researcher drops a source (a `.txt`, `.md` or `.json` file, or pasted text or a paper abstract) onto the "platen". A deterministic, client-side engine parses it, distills it into atomic archival cards (one Note, one or two Quotes, and an Artifact when the source holds data), detects its publication year, lays the cards out radially on the canvas, links them with human edges, and wakes the Ghost Engine so the new cards are bridged to the existing archive. No network call or API key is needed. PDF is out of scope.
 

@@ -1,5 +1,7 @@
 # Requirements Document: The Ghost in the Machine (Autonomous Associative AI)
 
+> **Superseded by Spec 09 (in part).** The Synapse Inspector Drawer is replaced by the **Synapse tab of the Research Command Dock** (`.kiro/specs/09-command-console-and-tactile-engine`). Selecting a discovery (`selectedGhostDiscoveryId`) now opens the dock on that tab; the actions (Accept, Dismiss, Walk as trail) and the discovery engine are unchanged. Escape collapses the dock instead of closing a drawer, and a real edge can be inspected there too (`inspectedEdgeId`). Until Phase B of Spec 09 lands, the drawer component still renders.
+
 ## Introduction
 This specification defines the Ghost Engine for Memex 2.0: a deterministic, client-side semantic engine that scans the canvas, finds non-obvious bridges between unconnected cards, draws them as Phantom Violet "ghost synapses", and lets the user inspect, accept, dismiss or walk each one as a trail. The offline engine needs no network call or API key; an optional live Gemini route can replace it when a key is available.
 

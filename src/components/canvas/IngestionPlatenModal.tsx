@@ -17,6 +17,7 @@ import {
   parseArxivId,
   type ArxivPaper,
 } from "@/core/arxiv";
+import { arxivCassetteId, cassetteRefs } from "@/core/cassette-engine";
 import {
   MAX_SOURCE_BYTES,
   distillSourceText,
@@ -184,6 +185,8 @@ function ModalBody({ onClose, onIngested }: ModalProps) {
       const distilled = distillSourceText(parsed.title, parsed.text, pickIngestionBase(nodes), {
         existingIds: nodes.map((n) => n.id),
         createdAt: new Date().toISOString(),
+        existingCassettes: cassetteRefs(nodes),
+        ...(resolved ? { cassetteId: arxivCassetteId(resolved.arxivId) } : {}),
       });
       const cards = resolved ? applyArxivMetadata(distilled.nodes, resolved) : distilled.nodes;
       const ids = ingestSource(cards, distilled.edges);

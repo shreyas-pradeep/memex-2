@@ -6,7 +6,7 @@ import type {
   MemexNode,
   Trail,
 } from "./types";
-import { removeNodeFromDiscoveries } from "./ghost-engine";
+import { ghostPairKey, removeNodeFromDiscoveries } from "./ghost-engine";
 import { removeNodeFromTrail } from "./trail-engine";
 import { cyclePolarity } from "./synthesis-engine";
 
@@ -141,6 +141,45 @@ export function acceptDiscovery(state: MemexGraphState, discoveryId: string): Me
     strength: d.confidence,
   });
   return removeDiscovery(connected, discoveryId);
+}
+
+/** True when any real edge joins the two cards, in either direction and of any origin. */
+export function areConnected(
+  edges: readonly Pick<AssociativeEdge, "source" | "target">[],
+  idA: string,
+  idB: string,
+): boolean {
+  const key = ghostPairKey(idA, idB);
+  return edges.some((e) => ghostPairKey(e.source, e.target) === key);
+}
+
+/**
+ * Magnetic snap (Spec 09): connects the dragged card (`sourceId`) to `targetId`
+ * the way `acceptDiscovery` does. The edge is human, carries the generated
+ * rationale and uses the affinity as strength, and any ghost discovery for the
+ * same pair (either orientation) is consumed. State is unchanged (same
+ * reference) for a self-pair, a missing card, or a pair that is already
+ * connected in either direction, so a snap can never duplicate an edge.
+ */
+export function snapConnect(
+  state: MemexGraphState,
+  sourceId: string,
+  targetId: string,
+  data: { rationale: string; strength: number },
+): MemexGraphState {
+  if (sourceId === targetId || areConnected(state.edges, sourceId, targetId)) return state;
+  const connected = connectNodes(state, sourceId, targetId, "human", data);
+  if (connected === state) return state;
+  const pair = ghostPairKey(sourceId, targetId);
+  const stale = connected.ghostDiscoveries.some((g) => ghostPairKey(g.sourceId, g.targetId) === pair);
+  return stale
+    ? {
+        ...connected,
+        ghostDiscoveries: connected.ghostDiscoveries.filter(
+          (g) => ghostPairKey(g.sourceId, g.targetId) !== pair,
+        ),
+      }
+    : connected;
 }
 
 /**

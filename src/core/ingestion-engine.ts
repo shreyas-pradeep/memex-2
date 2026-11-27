@@ -1,4 +1,5 @@
 import { CONCEPT_LEXICON, STOP_WORDS, stem } from "./ghost-engine";
+import { CASSETTE_TITLE_MAX, hashCassetteId, resolveCassetteId, type CassetteRef } from "./cassette-engine";
 import { edgeId } from "./graph-engine";
 import { TRAIL_EPOCH } from "./trail-engine";
 import type { AssociativeEdge, MemexCardType, MemexNode } from "./types";
@@ -65,6 +66,14 @@ export interface IngestContext {
   existingIds?: Iterable<string>;
   /** First archival number to use (`MEM-1945-XXXX`). Default 1. */
   archivalStart?: number;
+  /**
+   * Base cassette id (Spec 09), e.g. `cassette-1706.03762` for an arXiv paper.
+   * Default `cassette-<8-hex hash of title and text>`, the hash that also
+   * prefixes the card ids.
+   */
+  cassetteId?: string;
+  /** Cassettes already on the canvas; the generated id is made collision-safe against them. */
+  existingCassettes?: Iterable<CassetteRef>;
 }
 
 export interface DistilledSource {
@@ -107,7 +116,7 @@ function clampCoordinate(n: number): number {
   return Math.min(MAX_COORDINATE, Math.max(-MAX_COORDINATE, n));
 }
 
-function fnv1a(text: string): string {
+export function fnv1a(text: string): string {
   let h = 0x811c9dc5;
   for (let i = 0; i < text.length; i++) {
     h ^= text.charCodeAt(i);
@@ -477,7 +486,8 @@ interface CardDraft {
  * one valid Note. Quotes are verbatim quotations or labelled excerpts of the
  * source; nothing is invented. IDs are `<prefix>-note|quote-1|quote-2|artifact`
  * where the prefix is `ctx.idPrefix` or `src-<fnv1a(title, text)>`, suffixed
- * `-2`, `-3`, ... until none collides with `ctx.existingIds`.
+ * `-2`, `-3`, ... until none collides with `ctx.existingIds`. Every card gets
+ * the same `cassetteId` / `cassetteTitle` (see `IngestContext.cassetteId`).
  */
 export function distillSourceText(
   title: string,
@@ -561,6 +571,14 @@ export function distillSourceText(
 
   const createdAt = ctx.createdAt ?? TRAIL_EPOCH;
   const archivalStart = Math.max(1, Math.floor(ctx.archivalStart ?? 1));
+  // One cassette for every card of this source. The default id uses the same
+  // hash as the card-id prefix, whatever `idPrefix` or collision bumps did.
+  const cassetteTitle = truncateAtWord(noteTitle || UNTITLED_SOURCE, CASSETTE_TITLE_MAX);
+  const cassetteId = resolveCassetteId(
+    ctx.cassetteId ?? hashCassetteId(fnv1a(`${title}\u0000${text}`)),
+    cassetteTitle,
+    ctx.existingCassettes ?? [],
+  );
   const noteTags = extractTags(`${title}\n${text}`);
   const positions = radialPlacement(basePosition, drafts.length);
 
@@ -579,6 +597,8 @@ export function distillSourceText(
         tags: own.length > 0 ? own : noteTags,
         createdAt,
         ...(year !== undefined ? { year } : {}),
+        cassetteId,
+        cassetteTitle,
       },
     };
   });

@@ -147,6 +147,11 @@ function parseDateParts(date: string): { year: number; month: number; day: numbe
   return { year, month, day };
 }
 
+/** True when `date` is a valid `YYYY`, `YYYY-MM` or `YYYY-MM-DD` (the parser behind `getEventSortKey`). */
+export function isValidEventDate(date: string): boolean {
+  return parseDateParts(date) !== null;
+}
+
 /**
  * The sortable value of a card's event date, or `null` when it has none.
  *
