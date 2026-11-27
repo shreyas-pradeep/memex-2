@@ -1,0 +1,32 @@
+# Implementation Plan: 06-ghost-and-sprocket
+
+- [x] 1. Author the spec
+  - Create `requirements.md`, `design.md` and `tasks.md` in `.kiro/specs/06-ghost-and-sprocket/`.
+  - _Requirements: 1.1 to 8.7_
+- [x] 2. Implement the pure Sprocket engine
+  - Create `src/core/sprocket-engine.ts`: geometry (`cubicBezierPoint`, `getEdgeGeometry`, `getEdgeCurve`, `rectToBounds`, `clampToBounds`, `getSprocketPosition`, `getTraversalPoint`, `getPerchPosition`, `getEdgeMidpoint`, `findWireDirection`, `resolveCardRect`), quips (`selectSprocketQuip`, `advanceQuipIndex`), `pickInspectionTarget`, guidance (`getGuidanceStateId`, `getGuidanceMessage`, `IDLE_THRESHOLD_MS`), toast catalog and reducer (`pushToast`, `dismissToast`).
+  - _Requirements: 2.2, 2.3, 2.4, 2.5, 3.2, 4.3, 4.4, 5.2, 5.3, 5.4, 6.2, 8.1_
+- [x] 3. Share the edge path math with the core
+  - Replace the anchor and facing-side code in `src/components/canvas/AssociativePulseEdge.tsx` with `getEdgeGeometry`, `EDGE_CURVATURE` and `EDGE_FALLBACK_CARD_SIZE`; rendering stays identical (still `getBezierPath`).
+  - _Requirements: 2.2, 8.2_
+- [x] 4. Build the session-only toast store
+  - Create `src/store/useToastStore.ts` (`show`, `dismiss`, `clear`, `showToast`) on top of the pure reducer; keep it out of `useMemexStore`, persistence and export.
+  - _Requirements: 6.2, 6.8_
+- [x] 5. Build Sprocket
+  - Create `src/components/canvas/SprocketCrawler.tsx`: 24×24 brass SVG with CSS-driven legs, `ViewportPortal` placement, motion-value choreography (perch, wire traversal, relocation, ghost reaction with "!" and inspection), click spin, steam puff and quip bubble, reduced-motion variants, cleanup. Add leg keyframes and the reduced-motion rule to `src/app/globals.css`.
+  - _Requirements: 1.1 to 1.7, 2.1, 2.6, 2.7, 3.1 to 3.8, 4.1 to 4.5, 7.1 to 7.3, 8.3, 8.4, 8.5_
+- [x] 6. Build the Ghost Guidance Beacon
+  - Create `src/components/canvas/GhostGuidanceBeacon.tsx`: phosphor eye with violet mist, text bubble from `getGuidanceMessage`, throttled passive idle tracking, `aria-live="polite"`, session-only hide/show control.
+  - _Requirements: 5.1 to 5.8, 7.1, 7.2, 8.3_
+- [x] 7. Build the retro toaster and wire the toasts
+  - Create `src/components/canvas/RetroToaster.tsx`. Toast `EMPTY_DROP` and `ARXIV_INVALID` from `IngestionPlatenModal.tsx` (blank raw text stays submittable), and `TRAIL_END` from `TrailPlaybackDock.tsx` (arrival at the last stop, Right Arrow on the last stop).
+  - _Requirements: 6.1 to 6.8, 7.2, 8.7_
+- [x] 8. Mount in the canvas
+  - Mount `SprocketCrawler` inside `<ReactFlow>`, `GhostGuidanceBeacon` in the HUD under the Wake button (HUD card scrolls instead of overflowing), and `RetroToaster` once in `MemexCanvas.tsx`.
+  - _Requirements: 1.3, 5.1, 6.4, 8.7_
+- [x] 9. Property-based and unit tests
+  - Create `src/core/__tests__/sprocket.property.test.ts` (Properties 1 to 3, 200 runs each; path matching against `getBezierPath`; inspection target; toasts; session-only store).
+  - _Requirements: 2.2, 2.3, 2.5, 3.2, 4.3, 4.4, 5.2, 5.3, 5.4, 6.2, 6.8_
+- [x] 10. Verify and commit
+  - Run `npx tsc --noEmit`, `npx vitest run`, `npx eslint src` and `npm run build`; commit `feat(spec-06): implement sprocket crawler, ghost guidance beacon and retro toasts`.
+  - _Requirements: all_

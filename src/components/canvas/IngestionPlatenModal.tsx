@@ -26,6 +26,7 @@ import {
   type ParsedSource,
 } from "@/core/ingestion-engine";
 import { useMemexStore } from "@/store/useMemexStore";
+import { showToast } from "@/store/useToastStore";
 
 type Tab = "file" | "text" | "arxiv";
 
@@ -89,6 +90,7 @@ function ModalBody({ onClose, onIngested }: ModalProps) {
     const parsed = parseSourceFile(f.name, content);
     if (!parsed.ok) {
       setError(parsed.message);
+      if (parsed.code === "empty") showToast("EMPTY_DROP");
       return;
     }
     setFile({ name: f.name, size: f.size, parsed });
@@ -106,11 +108,14 @@ function ModalBody({ onClose, onIngested }: ModalProps) {
     setPaper(null);
     const id = parseArxivId(arxivInput);
     if (id === undefined) {
+      const doi = isDoiLike(arxivInput);
       setError(
-        isDoiLike(arxivInput)
+        doi
           ? "DOI lookup is not supported yet. Enter an arXiv ID or an arxiv.org URL."
           : "Not a valid arXiv ID or URL. Try 1706.03762, arXiv:1706.03762v5 or cs/0112017.",
       );
+      // The DOI message stays distinct: only a malformed identifier gets the toast.
+      if (!doi) showToast("ARXIV_INVALID");
       return;
     }
     setError(null);
@@ -123,6 +128,8 @@ function ModalBody({ onClose, onIngested }: ModalProps) {
         signal: controller.signal,
       });
       if (!res.ok) {
+        // A 400 from the resolver means it rejected the identifier format.
+        if (res.status === 400) showToast("ARXIV_INVALID");
         setError(
           res.status === 404
             ? `No paper found for arXiv:${id}.`
@@ -167,6 +174,7 @@ function ModalBody({ onClose, onIngested }: ModalProps) {
     }
     if (!parsed.ok) {
       setError(parsed.message);
+      if (parsed.code === "empty") showToast("EMPTY_DROP");
       return;
     }
     setError(null);
@@ -438,7 +446,8 @@ function ModalBody({ onClose, onIngested }: ModalProps) {
           <button
             type="button"
             onClick={scan}
-            disabled={!canScan || scanning}
+            // Raw text stays clickable when blank so the empty-parchment notice can fire.
+            disabled={scanning || (!canScan && tab !== "text")}
             aria-busy={scanning}
             className="cursor-pointer rounded-xl border border-[#FFB236] bg-[#FFB236] px-4 py-2 font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-[#090A0F] shadow-[0_2px_0_rgba(0,0,0,0.65)] hover:brightness-110 active:translate-y-[2px] disabled:cursor-not-allowed disabled:opacity-40"
           >

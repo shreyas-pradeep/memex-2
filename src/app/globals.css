@@ -217,11 +217,34 @@ body {
   animation-iteration-count: infinite;
 }
 
+/* Sprocket's legs: a small rocking step, transform only. Active only while the
+   crawler is scurrying (data-moving="true" on the sprite). */
+.sprocket-leg {
+  transform-box: fill-box;
+  transform-origin: 50% 0%;
+}
+@keyframes sprocket-step {
+  from {
+    transform: rotate(-24deg);
+  }
+  to {
+    transform: rotate(24deg);
+  }
+}
+[data-moving="true"] .sprocket-leg-a {
+  animation: sprocket-step 0.16s ease-in-out infinite alternate;
+}
+[data-moving="true"] .sprocket-leg-b {
+  animation: sprocket-step 0.16s ease-in-out infinite alternate-reverse;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .memex-edge-pulse,
   .memex-edge-pulse-reverse,
   .memex-ghost-pulse,
-  .memex-phosphor-dot {
-    animation: none;
+  .memex-phosphor-dot,
+  .sprocket-leg-a,
+  .sprocket-leg-b {
+    animation: none !important;
   }
 }

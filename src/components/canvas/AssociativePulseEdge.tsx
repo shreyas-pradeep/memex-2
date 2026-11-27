@@ -12,6 +12,13 @@ import {
 } from "@xyflow/react";
 import { AnimatePresence, motion } from "framer-motion";
 import { confidencePercent } from "@/core/ghost-engine";
+import {
+  EDGE_CURVATURE,
+  EDGE_FALLBACK_CARD_SIZE,
+  getEdgeGeometry,
+  type EdgeSide,
+  type Rect,
+} from "@/core/sprocket-engine";
 import { cyclePolarity, getEdgePolarity } from "@/core/synthesis-engine";
 import {
   EDGE_COLORS,
@@ -38,49 +45,23 @@ const POLARITY_BADGE: Record<EdgePolarity, { label: string; word: string }> = {
   synthesizes: { label: "⚡ SYNAPSE", word: "synthesizes" },
 };
 
-/** Fallback card size before React Flow has measured the node. */
-const DEFAULT_W = 280;
-const DEFAULT_H = 160;
+/** React Flow handle positions for the core's side names (the string values are identical). */
+const SIDE_TO_POSITION: Record<EdgeSide, Position> = {
+  top: Position.Top,
+  bottom: Position.Bottom,
+  left: Position.Left,
+  right: Position.Right,
+};
 
-interface Box {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-}
-
-function boxOf(node: InternalNode | undefined): Box | null {
+/** Card rectangle of an internal node, or null before it exists. */
+function boxOf(node: InternalNode | undefined): Rect | null {
   if (!node) return null;
   return {
     x: node.internals.positionAbsolute.x,
     y: node.internals.positionAbsolute.y,
-    w: node.measured.width ?? DEFAULT_W,
-    h: node.measured.height ?? DEFAULT_H,
+    width: node.measured.width ?? EDGE_FALLBACK_CARD_SIZE.width,
+    height: node.measured.height ?? EDGE_FALLBACK_CARD_SIZE.height,
   };
-}
-
-function anchor(b: Box, side: Position): { x: number; y: number } {
-  switch (side) {
-    case Position.Top:
-      return { x: b.x + b.w / 2, y: b.y };
-    case Position.Bottom:
-      return { x: b.x + b.w / 2, y: b.y + b.h };
-    case Position.Left:
-      return { x: b.x, y: b.y + b.h / 2 };
-    default:
-      return { x: b.x + b.w, y: b.y + b.h / 2 };
-  }
-}
-
-/** Picks the facing sides of two cards from their relative placement. */
-function facingSides(s: Box, t: Box): [Position, Position] {
-  const dx = t.x + t.w / 2 - (s.x + s.w / 2);
-  const dy = t.y + t.h / 2 - (s.y + s.h / 2);
-  const horizontal = Math.abs(dx) / (s.w + t.w) >= Math.abs(dy) / (s.h + t.h);
-  if (horizontal) {
-    return dx >= 0 ? [Position.Right, Position.Left] : [Position.Left, Position.Right];
-  }
-  return dy >= 0 ? [Position.Bottom, Position.Top] : [Position.Top, Position.Bottom];
 }
 
 function AssociativePulseEdgeImpl({
@@ -123,9 +104,12 @@ function AssociativePulseEdgeImpl({
   const sb = boxOf(sourceNode);
   const tb = boxOf(targetNode);
   if (sb && tb) {
-    [sp, tp] = facingSides(sb, tb);
-    ({ x: sx, y: sy } = anchor(sb, sp));
-    ({ x: tx, y: ty } = anchor(tb, tp));
+    // Shared with Sprocket (`sprocket-engine`), so the crawler follows this exact wire.
+    const g = getEdgeGeometry(sb, tb);
+    sp = SIDE_TO_POSITION[g.sourceSide];
+    tp = SIDE_TO_POSITION[g.targetSide];
+    ({ x: sx, y: sy } = g.source);
+    ({ x: tx, y: ty } = g.target);
   }
 
   const [path, labelX, labelY] = getBezierPath({
@@ -135,7 +119,7 @@ function AssociativePulseEdgeImpl({
     targetX: tx,
     targetY: ty,
     targetPosition: tp,
-    curvature: 0.35,
+    curvature: EDGE_CURVATURE,
   });
 
   const origin = data?.origin ?? "human";

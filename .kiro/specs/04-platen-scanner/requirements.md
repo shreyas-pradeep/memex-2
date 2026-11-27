@@ -71,7 +71,7 @@ Terminology used here maps to the real codebase: a card is a `MemexNode` (`type:
 
 #### Acceptance Criteria
 1. IF a file's extension is not supported, THEN THE SYSTEM SHALL show "unsupported file type" naming the accepted types and SHALL NOT change the graph.
-2. IF the source is empty or whitespace-only, THEN THE SYSTEM SHALL show an "empty source" error and SHALL NOT change the graph.
+2. IF the source is empty or whitespace-only, THEN THE SYSTEM SHALL show an "empty source" error and SHALL NOT change the graph. (Spec 06 adds a retro toast next to this error, and keeps "Scan into platen" enabled on the raw-text tab while it is blank so the error can be reached.)
 3. IF a source exceeds 1 MB (1,048,576 UTF-8 bytes), THEN THE SYSTEM SHALL reject it with a "too large" error that states the limit.
 4. IF a `.json` source is not valid JSON, THEN THE SYSTEM SHALL show a "malformed JSON" error with the parser's reason.
 5. THE SYSTEM SHALL show errors inline in the modal with `role="alert"`, and SHALL keep the modal open.

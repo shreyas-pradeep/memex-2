@@ -40,6 +40,9 @@ import { AddCardModal, type NewCardInput } from "./AddCardModal";
 import { ArchivalCardNode } from "./ArchivalCardNode";
 import { IngestionPlatenModal } from "./IngestionPlatenModal";
 import { AssociativePulseEdge } from "./AssociativePulseEdge";
+import { GhostGuidanceBeacon } from "./GhostGuidanceBeacon";
+import { RetroToaster } from "./RetroToaster";
+import { SprocketCrawler } from "./SprocketCrawler";
 
 // Module-scope so React Flow never sees a new object identity between renders.
 // The graph core types nodes `memexCard` and edges `associative`; the
@@ -191,7 +194,7 @@ function ArchivalHud() {
 
   return (
     <Panel position="top-left" className="!m-4">
-      <div className="w-[260px] rounded-2xl border border-white/10 bg-[#141721]/95 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.07),0_12px_36px_rgba(0,0,0,0.55)]">
+      <div className="max-h-[calc(100vh-2rem)] w-[260px] max-w-[calc(100vw-2rem)] overflow-y-auto rounded-2xl border border-white/10 bg-[#141721]/95 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.07),0_12px_36px_rgba(0,0,0,0.55)]">
         <div className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.2em] text-text-muted">
           <span
             aria-hidden="true"
@@ -236,6 +239,7 @@ function ArchivalHud() {
           />
           {scanning ? "Scanning archive…" : "⚡ Wake Ghost Engine"}
         </button>
+        <GhostGuidanceBeacon />
         <div className="mt-2 flex items-center gap-2">
           <span
             role="status"
@@ -348,6 +352,7 @@ const Flow = memo(function Flow() {
       <TrailCameraDirector />
       <TrailPlaybackDock />
       <ArchivalTimeline />
+      <SprocketCrawler />
     </ReactFlow>
   );
 });
@@ -374,6 +379,7 @@ export function MemexCanvas() {
         </ReactFlowProvider>
       ) : null}
       {hydrated ? <SynapseInspectorDrawer /> : null}
+      <RetroToaster />
     </div>
   );
 }

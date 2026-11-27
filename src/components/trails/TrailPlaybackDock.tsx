@@ -1,12 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { generateTrailBriefing } from "@/core/synthesis-engine";
 import { EDGE_COLORS } from "@/core/types";
 import { ExportBriefingModal } from "../canvas/ExportBriefingModal";
 import { selectActiveTrail } from "@/store/trail-selectors";
 import { useMemexStore, type MemexStore } from "@/store/useMemexStore";
+import { showToast } from "@/store/useToastStore";
 import { rgba, skinFor } from "../canvas/card-skins";
 
 const SPRING = { type: "spring", stiffness: 300, damping: 28 } as const;
@@ -76,6 +77,22 @@ export function TrailPlaybackDock() {
     return () => window.clearTimeout(timer);
   }, [playing, index, trail, next]);
 
+  // End of trail: toast once each time playback arrives at the last stop from an
+  // earlier one (Next, auto-play or a timeline jump). Starting a trail on its last
+  // stop, or re-rendering while there, does not repeat it.
+  const lastStopRef = useRef<{ trailId: string; index: number } | null>(null);
+  useEffect(() => {
+    if (trail === null) {
+      lastStopRef.current = null;
+      return;
+    }
+    const prev = lastStopRef.current;
+    lastStopRef.current = { trailId: trail.id, index };
+    if (prev !== null && prev.trailId === trail.id && index > prev.index && index === total - 1) {
+      showToast("TRAIL_END");
+    }
+  }, [trail, index, total]);
+
   // Keyboard: arrows step, Escape exits (ignored while typing or while the export modal is open).
   useEffect(() => {
     if (trail === null || exportOpen) return;
@@ -87,13 +104,17 @@ export function TrailPlaybackDock() {
       ) {
         return;
       }
-      if (e.key === "ArrowRight") next();
+      if (e.key === "ArrowRight") {
+        // Next is held at the last stop; say why nothing moved.
+        if (atEnd && !e.repeat) showToast("TRAIL_END");
+        next();
+      }
       else if (e.key === "ArrowLeft") prev();
       else if (e.key === "Escape") exit();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [trail, exportOpen, next, prev, exit]);
+  }, [trail, exportOpen, atEnd, next, prev, exit]);
 
   const buttonClass = useMemo(
     () =>

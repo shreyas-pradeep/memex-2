@@ -70,7 +70,7 @@ Terminology maps to the real codebase: a card is a `MemexNode` (`data: MemexNode
 5. THE SYSTEM SHALL answer 404 when arXiv returns no entry or an entry titled "Error", 502 for an upstream failure, redirect, oversize or unreadable response, 504 on timeout, and 429 above 12 requests per minute per client IP.
 6. THE SYSTEM SHALL return only generic error messages and SHALL NOT return, log or cache upstream bodies or errors.
 7. THE Platen modal SHALL offer a third tab labelled "arXiv / DOI" with an input and a "RESOLVE PAPER" button, a loading state, and inline `role="alert"` errors for invalid input, not found, rate limit and network failure.
-8. WHEN the input is a DOI, THE modal SHALL show that DOI lookup is not supported yet, and SHALL NOT call the route.
+8. WHEN the input is a DOI, THE modal SHALL show that DOI lookup is not supported yet, and SHALL NOT call the route. (Spec 06: an invalid, non-DOI identifier, or a 400 from the route, also raises the "signal was lost" toast; the DOI message does not.)
 9. WHEN a paper is resolved, THE modal SHALL preview its title, authors and year, then distill its title and abstract into Note, Quote and Artifact cards through the existing ingestion path (one `ingestSource` call, one ghost scan).
 10. THE SYSTEM SHALL stamp every generated card with `source: "arXiv:<id>"`, `pdfUrl`, `authors` and the published `year`, and the published year SHALL override the year the text heuristic found.
 11. WHEN the modal closes or the user leaves the tab, THE SYSTEM SHALL abort any in-flight request. The "File Drop" and "Direct Raw Text / Paper Abstract" tabs SHALL work unchanged.
