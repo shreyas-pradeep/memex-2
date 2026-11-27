@@ -22,3 +22,7 @@
   - Make `triggerGhostScan` async (live first, local fallback, stale and concurrency guards, `ghostEngineMode`); add the AI pill, gear button and `AISettingsModal`; add `.env.example`.
   - Extend `ghost.property.test.ts` and the store tests (fetch mocked); verify with `npx tsc --noEmit`, `npm test`, `npx eslint src` and `npx next build`, then commit: `feat(ghost): implement live generative AI API route and fix local semantic discovery`.
   - _Requirements: 1.5, 1.6, 4.2, 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 5.7_
+- [x] 5. Add semantic clusters, cross-era lineage boost and contextual rationales
+  - Extend `CONCEPT_LEXICON` with weak terms and phrase matching; add `scoreGhostPairs`, `crossEraBoost`, `LINEAGE_RATIONALE_RULES`; raise the cap to 6 and keep the threshold at 0.3.
+  - Extend `ghost.property.test.ts` (boost, clusters, rationale table) and update the seed expectations.
+  - Commit: `feat(canvas,ghost): high-contrast card skins and supercharged cross-era synapse detection`.

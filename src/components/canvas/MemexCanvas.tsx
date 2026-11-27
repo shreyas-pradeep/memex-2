@@ -17,7 +17,7 @@ import {
 import { buildGhostEdges } from "@/core/ghost-engine";
 import { nextArchivalId } from "@/core/graph-engine";
 import {
-  EDGE_COLORS,
+  CARD_ACCENTS,
   type AssociativeEdge,
   type GhostDiscovery,
   type MemexNode,
@@ -75,7 +75,7 @@ const selectDiscoveries = (s: MemexStore): GhostDiscovery[] =>
   s.ghostDiscoveries ?? NO_DISCOVERIES;
 
 function minimapNodeColor(node: MemexNode): string {
-  return node.data.cardType === "ghost" ? EDGE_COLORS.ghost : EDGE_COLORS.human;
+  return CARD_ACCENTS[node.data.cardType] ?? CARD_ACCENTS.note;
 }
 
 function ArchivalHud() {

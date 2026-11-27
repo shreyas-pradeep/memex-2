@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
 import { parseEventDateInput } from "@/core/trail-engine";
-import { EDGE_COLORS, type MemexCardType } from "@/core/types";
+import { CARD_ACCENTS, type MemexCardType } from "@/core/types";
+import { rgba } from "./card-skins";
 import { TagInput, withPendingTags } from "./TagInput";
 
 export type NewCardType = Extract<MemexCardType, "note" | "quote" | "artifact">;
@@ -39,7 +40,6 @@ const IMAGE_PRESETS: readonly { label: string; url: string }[] = [
   },
 ];
 
-const ACCENT = EDGE_COLORS.human;
 const FIELD_CLASS =
   "w-full rounded-xl border border-[#FFB236]/40 bg-[#141721] px-3 py-2 text-[13px] text-text-primary outline-none focus:border-[#FFB236]";
 const LABEL_CLASS = "font-mono text-[10px] uppercase tracking-[0.16em] text-text-muted";
@@ -144,8 +144,12 @@ function ModalBody({ onClose, onSubmit }: Omit<AddCardModalProps, "open">) {
                 className="flex-1 cursor-pointer rounded-xl border px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.14em] transition-colors duration-100"
                 style={
                   cardType === t
-                    ? { color: "#090A0F", background: ACCENT, borderColor: ACCENT }
-                    : { color: ACCENT, background: "#141721", borderColor: `${ACCENT}66` }
+                    ? { color: "#090A0F", background: CARD_ACCENTS[t], borderColor: CARD_ACCENTS[t] }
+                    : {
+                        color: CARD_ACCENTS[t],
+                        background: "#141721",
+                        borderColor: rgba(CARD_ACCENTS[t], 0.45),
+                      }
                 }
               >
                 {t}
@@ -159,7 +163,7 @@ function ModalBody({ onClose, onSubmit }: Omit<AddCardModalProps, "open">) {
           <TagInput
             tags={tags}
             text={tagText}
-            accent={ACCENT}
+            accent={CARD_ACCENTS[cardType]}
             onTagsChange={setTags}
             onTextChange={setTagText}
             inputClassName="border border-[#FFB236]/40 bg-[#141721] outline-none focus:border-[#FFB236]"

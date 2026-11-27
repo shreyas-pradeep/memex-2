@@ -15,6 +15,7 @@ import { formatEventDate, parseEventDateInput } from "@/core/trail-engine";
 import { EDGE_COLORS, type MemexNode } from "@/core/types";
 import { DIM_OPACITY, useNodeTrailState } from "@/store/trail-selectors";
 import { useMemexStore, type MemexStore } from "@/store/useMemexStore";
+import { SCANLINES, restShadow, rgba, skinFor } from "./card-skins";
 import { TagInput, withPendingTags } from "./TagInput";
 
 /** GPU-composited microfilm tint (replaces the CPU-bound SVG duotone filter). */
@@ -23,46 +24,27 @@ const MICROFILM_IMAGE_FILTER = "grayscale(100%) contrast(125%) sepia(25%)";
 const SPRING = { type: "spring", stiffness: 300, damping: 28 } as const;
 const EXIT_TRANSITION = { duration: 0.22, ease: "easeIn" } as const;
 
-/** Dark-mode editor field background (same obsidian as the card surface). */
-const EDITOR_BG = "#141721";
+/** Edit-field background: canvas obsidian, so parchment and tinted text read at high contrast. */
+const FIELD_BG = "#090A0F";
 /** Minimum body height (px) so short notes never collapse. */
 const BODY_MIN_HEIGHT = 160;
 
-/** `#RRGGBB` to `rgba(r, g, b, a)`. */
-function rgba(hex: string, alpha: number): string {
-  const n = parseInt(hex.slice(1), 16);
-  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
-}
-
 /**
- * All variants keep the same shadow structure (two layers) so framer-motion
- * can interpolate them. Only transform and box-shadow are animated. Ghost
- * cards rest with a Phantom Violet rim glow; other cards rest dark.
+ * Variants animate transform and opacity only. All glows are static
+ * box-shadows on overlay layers whose opacity changes (hover, selection,
+ * trail state, ghost pulse), so nothing repaints a shadow per frame.
  */
-function cardVariants(accent: string, isGhost: boolean): Variants {
-  const restGlow = isGhost ? `0 0 22px 1px ${rgba(accent, 0.3)}` : `0 0 0px 0px ${rgba(accent, 0)}`;
-  const rest = `${restGlow}, 0 4px 14px rgba(0, 0, 0, 0.55)`;
-  return {
-    rest: { scale: 1, y: 0, boxShadow: rest },
-    hover: {
-      scale: 1.025,
-      y: -3,
-      boxShadow: `0 0 26px 1px ${rgba(accent, isGhost ? 0.5 : 0.32)}, 0 14px 30px rgba(0, 0, 0, 0.7)`,
-    },
-    selected: {
-      scale: 1.01,
-      y: 0,
-      boxShadow: `0 0 0 1px ${rgba(accent, 0.9)}, 0 10px 26px rgba(0, 0, 0, 0.65)`,
-    },
-    exit: {
-      scale: 0.88,
-      y: 6,
-      opacity: 0,
-      boxShadow: rest,
-      transition: EXIT_TRANSITION,
-    },
-  };
-}
+const CARD_VARIANTS: Variants = {
+  rest: { scale: 1, y: 0 },
+  hover: { scale: 1.025, y: -3 },
+  selected: { scale: 1.01, y: 0 },
+  exit: {
+    scale: 0.88,
+    y: 6,
+    opacity: 0,
+    transition: EXIT_TRANSITION,
+  },
+};
 
 /** Minimum card size (px) enforced by the resizer. */
 const MIN_WIDTH = 280;
@@ -102,6 +84,40 @@ function Crosshair({ corner }: { corner: "tl" | "tr" | "bl" | "br" }) {
   );
 }
 
+/** Technical corner bracket (an L) for artifact cards; 1px crisp stroke in the accent. */
+function CornerBracket({ corner, color }: { corner: "tl" | "tr" | "bl" | "br"; color: string }) {
+  const pos: CSSProperties = {
+    position: "absolute",
+    width: 14,
+    height: 14,
+    pointerEvents: "none",
+    top: corner[0] === "t" ? 4 : undefined,
+    bottom: corner[0] === "b" ? 4 : undefined,
+    left: corner[1] === "l" ? 4 : undefined,
+    right: corner[1] === "r" ? 4 : undefined,
+    transform: `scale(${corner[1] === "r" ? -1 : 1}, ${corner[0] === "b" ? -1 : 1})`,
+  };
+  return (
+    <svg aria-hidden="true" viewBox="0 0 14 14" style={pos}>
+      <path d="M0.5 13V0.5H13" stroke={color} strokeWidth="1" fill="none" shapeRendering="crispEdges" />
+    </svg>
+  );
+}
+
+/** Phosphor eye for ghost pills: inline strokes only, no SVG filters. */
+function PhosphorEye({ color }: { color: string }) {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 14 10" className="h-2.5 w-3.5 shrink-0" fill="none">
+      <path
+        d="M0.7 5C2.4 2.2 4.5 0.9 7 0.9S11.6 2.2 13.3 5C11.6 7.8 9.5 9.1 7 9.1S2.4 7.8 0.7 5Z"
+        stroke={color}
+        strokeWidth="1"
+      />
+      <circle cx="7" cy="5" r="1.9" fill={color} className="memex-phosphor-dot" />
+    </svg>
+  );
+}
+
 /** FNV-1a hash: stable across server and client renders. */
 function hashString(value: string): number {
   let h = 2166136261;
@@ -122,30 +138,29 @@ function patentMarks(archivalId: string): { patentNo: string; x: string; y: stri
   };
 }
 
-const AMBER = EDGE_COLORS.human;
-const GRID_FINE = rgba(AMBER, 0.07);
-const GRID_MAJOR = rgba(AMBER, 0.18);
 
 /**
  * 1945 technical drawing plate for artifact cards: microfiche gridlines
  * (8px fine, 40px major), a line-drawn reel with a dimension rule, and patent
  * coordinates derived from the archival ID.
  */
-function BlueprintPlate({ archivalId }: { archivalId: string }) {
+function BlueprintPlate({ archivalId, accent }: { archivalId: string; accent: string }) {
   const { patentNo, x, y } = patentMarks(archivalId);
-  const stroke = rgba(AMBER, 0.75);
+  const stroke = rgba(accent, 0.75);
+  const gridFine = rgba(accent, 0.08);
+  const gridMajor = rgba(accent, 0.2);
   return (
     <div
       role="img"
       aria-label={`Technical drawing, patent ${patentNo}`}
       className="relative mb-3 h-14 shrink-0 overflow-hidden rounded-xl bg-[#090A0F]"
       style={{
-        border: `1px solid ${rgba(AMBER, 0.22)}`,
+        border: `1px solid ${rgba(accent, 0.25)}`,
         backgroundImage: [
-          `linear-gradient(${GRID_MAJOR} 1px, transparent 1px)`,
-          `linear-gradient(90deg, ${GRID_MAJOR} 1px, transparent 1px)`,
-          `linear-gradient(${GRID_FINE} 1px, transparent 1px)`,
-          `linear-gradient(90deg, ${GRID_FINE} 1px, transparent 1px)`,
+          `linear-gradient(${gridMajor} 1px, transparent 1px)`,
+          `linear-gradient(90deg, ${gridMajor} 1px, transparent 1px)`,
+          `linear-gradient(${gridFine} 1px, transparent 1px)`,
+          `linear-gradient(90deg, ${gridFine} 1px, transparent 1px)`,
         ].join(", "),
         backgroundSize: "40px 40px, 40px 40px, 8px 8px, 8px 8px",
       }}
@@ -179,11 +194,18 @@ function BlueprintPlate({ archivalId }: { archivalId: string }) {
 }
 
 function ArchivalCardNodeImpl({ id, data, selected }: NodeProps<MemexNode>) {
+  const skin = skinFor(data.cardType);
   const isGhost = data.cardType === "ghost";
   const isQuote = data.cardType === "quote";
   const isArtifact = data.cardType === "artifact";
-  const accent = isGhost ? EDGE_COLORS.ghost : EDGE_COLORS.human;
-  const variants = cardVariants(accent, isGhost);
+  const accent = skin.accent;
+  // Glow overlays sit on the border edge so they hug the thicker quote spine.
+  const overlayInset: CSSProperties = {
+    top: -1,
+    right: -1,
+    bottom: -1,
+    left: -skin.leftBorderWidth,
+  };
   const trailState = useNodeTrailState(id);
   const highlighted = useMemexStore(
     useCallback((s: MemexStore) => s.highlightedNodeId === id, [id]),
@@ -205,18 +227,18 @@ function ArchivalCardNodeImpl({ id, data, selected }: NodeProps<MemexNode>) {
   // Guards against committing twice (Escape followed by the blur it causes).
   const editingRef = useRef(false);
 
-  const startEditing = useCallback(() => {
+  const startEditing = () => {
     setDraft({
       title: data.title,
       content: data.content,
       tags: data.tags,
       tagText: "",
       imageUrl: data.imageUrl ?? "",
-      eventDate: formatEventDate(data) ?? "",
+      eventDate: eventLabel ?? "",
     });
     editingRef.current = true;
     setIsEditing(true);
-  }, [data]);
+  };
 
   const commitEdit = useCallback(() => {
     if (!editingRef.current) return;
@@ -251,12 +273,12 @@ function ArchivalCardNodeImpl({ id, data, selected }: NodeProps<MemexNode>) {
   };
 
   const fieldStyle: CSSProperties = {
-    background: EDITOR_BG,
-    border: `1px solid ${rgba(accent, 0.45)}`,
+    background: FIELD_BG,
+    border: `1px solid ${rgba(accent, 0.55)}`,
     outline: "none",
   };
 
-  // The ghost body gets a faint phosphor bloom behind the text.
+  // Ghost bodies get a faint phosphor bloom; artifact bodies a static CRT scanline texture.
   const bodyStyle: CSSProperties = {
     minHeight: BODY_MIN_HEIGHT,
     ...(isGhost
@@ -264,6 +286,7 @@ function ArchivalCardNodeImpl({ id, data, selected }: NodeProps<MemexNode>) {
           backgroundImage: `radial-gradient(ellipse at 50% 0%, ${rgba(accent, 0.12)}, transparent 70%)`,
         }
       : {}),
+    ...(isArtifact ? { backgroundImage: SCANLINES } : {}),
   };
 
   return (
@@ -284,7 +307,7 @@ function ArchivalCardNodeImpl({ id, data, selected }: NodeProps<MemexNode>) {
         }}
       >
       <motion.div
-        variants={variants}
+        variants={CARD_VARIANTS}
         initial="rest"
         animate={isExiting ? "exit" : selected ? "selected" : "rest"}
         whileHover={isExiting ? undefined : "hover"}
@@ -301,7 +324,9 @@ function ArchivalCardNodeImpl({ id, data, selected }: NodeProps<MemexNode>) {
         className="group nopan relative flex h-full w-full flex-col rounded-2xl bg-card-surface"
         style={
           {
-            border: `1px solid ${accent}`,
+            border: `1px solid ${skin.border}`,
+            borderLeft: `${skin.leftBorderWidth}px solid ${isQuote ? accent : skin.border}`,
+            boxShadow: restShadow(skin),
             minWidth: MIN_WIDTH,
             minHeight: MIN_HEIGHT,
             willChange: "transform",
@@ -314,11 +339,12 @@ function ArchivalCardNodeImpl({ id, data, selected }: NodeProps<MemexNode>) {
         {highlighted ? (
           <motion.span
             aria-hidden="true"
-            className="pointer-events-none absolute inset-0 rounded-2xl"
+            className="pointer-events-none absolute rounded-2xl"
             initial={{ opacity: 0, scale: 1 }}
             animate={{ opacity: [0, 1, 0.35, 1, 0], scale: [1, 1.03, 1, 1.03, 1] }}
             transition={{ duration: 1.7, ease: "easeInOut" }}
             style={{
+              ...overlayInset,
               boxShadow: `0 0 0 2px ${rgba(accent, 1)}, 0 0 40px 8px ${rgba(accent, 0.6)}`,
             }}
           />
@@ -326,20 +352,62 @@ function ArchivalCardNodeImpl({ id, data, selected }: NodeProps<MemexNode>) {
         {/* Trail glow: a static box-shadow whose opacity fades (GPU, no filter). */}
         <span
           aria-hidden="true"
-          className="pointer-events-none absolute inset-0 rounded-2xl"
+          className="pointer-events-none absolute rounded-2xl"
           style={{
+            ...overlayInset,
             opacity: trailState === "current" ? 1 : trailState === "active" ? 0.55 : 0,
             transition: "opacity 300ms ease",
             boxShadow: `0 0 0 2px ${rgba(accent, 0.95)}, 0 0 34px 4px ${rgba(accent, 0.55)}`,
           }}
         />
-        <Crosshair corner="tl" />
-        <Crosshair corner="tr" />
-        <Crosshair corner="bl" />
-        <Crosshair corner="br" />
+        {/* Hover glow: static box-shadow, revealed by an opacity transition. */}
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute rounded-2xl opacity-0 transition-opacity duration-200 group-hover:opacity-100"
+          style={{ ...overlayInset, boxShadow: skin.hoverGlow }}
+        />
+        {/* Selection ring: static box-shadow, shown by opacity. */}
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute rounded-2xl transition-opacity duration-200"
+          style={{
+            ...overlayInset,
+            opacity: selected ? 1 : 0,
+            boxShadow: `0 0 0 1px ${rgba(accent, 0.9)}`,
+          }}
+        />
+        {/* Ghost pulse: opacity and transform loop over a static violet box-shadow. */}
+        {isGhost ? (
+          <span
+            aria-hidden="true"
+            className="memex-ghost-pulse pointer-events-none absolute rounded-2xl"
+            style={{
+              ...overlayInset,
+              boxShadow: `0 0 26px 3px ${rgba(accent, 0.45)}, 0 0 0 1px ${rgba(accent, 0.5)}`,
+            }}
+          />
+        ) : null}
+        {isArtifact ? (
+          <>
+            <CornerBracket corner="tl" color={accent} />
+            <CornerBracket corner="tr" color={accent} />
+            <CornerBracket corner="bl" color={accent} />
+            <CornerBracket corner="br" color={accent} />
+          </>
+        ) : (
+          <>
+            <Crosshair corner="tl" />
+            <Crosshair corner="tr" />
+            <Crosshair corner="bl" />
+            <Crosshair corner="br" />
+          </>
+        )}
 
         {/* Microfiche strip. The whole card drags; the header is the grab surface. */}
-        <header className="flex shrink-0 cursor-grab items-center gap-2 rounded-t-2xl border-b border-white/5 bg-[#161922] px-4 py-2.5 active:cursor-grabbing">
+        <header
+          className="flex shrink-0 cursor-grab items-center gap-2 rounded-t-2xl border-b border-white/5 px-4 py-2.5 active:cursor-grabbing"
+          style={{ background: skin.headerBg }}
+        >
           <svg
             aria-hidden="true"
             viewBox="0 0 6 10"
@@ -353,13 +421,20 @@ function ArchivalCardNodeImpl({ id, data, selected }: NodeProps<MemexNode>) {
             <circle cx="1" cy="9" r="0.9" />
             <circle cx="5" cy="9" r="0.9" />
           </svg>
-          <span className="font-mono text-xs text-[#8E94A5]">{data.archivalId}</span>
-          <div className="ml-auto flex items-center gap-2">
+          <span className="min-w-0 truncate font-mono text-xs text-[#8E94A5]" title={data.archivalId}>
+            {data.archivalId}
+          </span>
+          <div className="ml-auto flex shrink-0 items-center gap-2">
             <span
-              className="rounded-full px-2 py-px font-mono text-[10px] uppercase tracking-[0.14em]"
-              style={{ color: accent, border: `1px solid ${rgba(accent, 0.4)}` }}
+              className="inline-flex items-center gap-1 whitespace-nowrap rounded-full px-1.5 py-px font-mono text-[10px] font-semibold uppercase tracking-[0.06em]"
+              style={{
+                color: accent,
+                background: rgba(accent, 0.1),
+                border: `1px solid ${rgba(accent, 0.5)}`,
+              }}
             >
-              {data.cardType}
+              {isGhost ? <PhosphorEye color={accent} /> : null}
+              {skin.label}
             </span>
             {/* No `nodrag`: only the edit fields opt out of dragging. A plain click
                 stays under `nodeDragThreshold`, so it never starts a drag. */}
@@ -381,8 +456,8 @@ function ArchivalCardNodeImpl({ id, data, selected }: NodeProps<MemexNode>) {
 
         {isEditing ? (
           <div
-            className="flex flex-1 flex-col gap-2 overflow-y-auto rounded-b-2xl bg-[#11131C] p-5"
-            style={{ minHeight: BODY_MIN_HEIGHT }}
+            className="flex flex-1 flex-col gap-2 overflow-y-auto rounded-b-2xl p-5"
+            style={{ minHeight: BODY_MIN_HEIGHT, background: skin.editorBg }}
             onBlur={onEditorBlur}
             onKeyDown={onEditorKeyDown}
           >
@@ -399,7 +474,7 @@ function ArchivalCardNodeImpl({ id, data, selected }: NodeProps<MemexNode>) {
               rows={3}
               value={draft.content}
               onChange={(e) => setDraft((d) => ({ ...d, content: e.target.value }))}
-              className="nodrag nowheel min-h-[4.5rem] w-full flex-1 resize-none rounded-xl px-2.5 py-1.5 text-[12px] leading-relaxed text-text-primary"
+              className={`nodrag nowheel min-h-[4.5rem] w-full flex-1 resize-none rounded-xl px-2.5 py-1.5 ${skin.editTextClass}`}
               style={fieldStyle}
             />
             <TagInput
@@ -437,14 +512,18 @@ function ArchivalCardNodeImpl({ id, data, selected }: NodeProps<MemexNode>) {
           </div>
         ) : (
           <div
-            className="relative flex-1 overflow-y-auto rounded-b-2xl bg-[#11131C] p-5"
-            style={bodyStyle}
+            className={`relative flex-1 overflow-y-auto rounded-b-2xl p-5 ${skin.bodyBgClass}`}
+            style={{
+              ...bodyStyle,
+              // Artifact and ghost bodies take their tint from a class or the card chassis.
+              backgroundColor: bodyStyle.backgroundImage ? undefined : skin.surface,
+            }}
           >
             {isQuote ? (
               <span
                 aria-hidden="true"
                 className="pointer-events-none absolute top-1 right-4 select-none font-serif text-[88px] leading-none"
-                style={{ color: AMBER, opacity: 0.1 }}
+                style={{ color: accent, opacity: 0.12 }}
               >
                 {"\u201C"}
               </span>
@@ -470,7 +549,7 @@ function ArchivalCardNodeImpl({ id, data, selected }: NodeProps<MemexNode>) {
               </div>
             ) : null}
 
-            {isArtifact && !data.imageUrl ? <BlueprintPlate archivalId={data.archivalId} /> : null}
+            {isArtifact && !data.imageUrl ? <BlueprintPlate archivalId={data.archivalId} accent={accent} /> : null}
 
             {data.imageUrl ? (
               <div className="mb-3 h-24 overflow-hidden rounded-xl border border-card-border bg-canvas-bg">
@@ -496,11 +575,7 @@ function ArchivalCardNodeImpl({ id, data, selected }: NodeProps<MemexNode>) {
             </h3>
             {data.content ? (
               <p
-                className={
-                  isQuote
-                    ? "relative mt-2 font-serif text-[14px] italic leading-relaxed text-text-primary/90"
-                    : "relative mt-1.5 text-[12px] leading-relaxed text-text-muted"
-                }
+                className={`relative ${isQuote ? "mt-2" : "mt-1.5"} ${skin.bodyTextClass}`}
               >
                 {data.content}
               </p>

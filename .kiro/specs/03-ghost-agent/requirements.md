@@ -14,7 +14,7 @@ This specification defines the Ghost Engine for Memex 2.0: a deterministic, clie
 3. THE SYSTEM SHALL NOT produce a discovery for a card paired with itself, SHALL NOT produce two discoveries for the same pair in either direction, and SHALL NOT produce a discovery for a pair already joined by a human edge.
 4. WHEN the same cards, edges and threshold are scanned twice, THE SYSTEM SHALL return identical discoveries in identical order, with IDs derived from the sorted pair of card IDs.
 5. WHEN a discovery is created, THE SYSTEM SHALL attach a synthesized bridge rationale that names the shared concepts of the two cards and, when both are dated, the temporal gap.
-6. THE SYSTEM SHALL match related terms through a concept lexicon and a deterministic stemmer, report local confidence within `[0.78, 0.96]` (monotone in the raw score), and return at most 3 discoveries per scan.
+6. THE SYSTEM SHALL match related terms through a concept lexicon and a deterministic stemmer, report local confidence within `[0.78, 0.96]` (monotone in the raw score), return at most 6 discoveries per scan, and add a +0.2 raw-score boost to unconnected pairs that share a concept when one card is dated 1970 or earlier and the other 2015 or later.
 
 ### Requirement 2: Visual Ghost Synapses
 **User Story:** As a viewer, I want suggested links to look different from my own links, so that I can tell machine suggestions from human ones at a glance.

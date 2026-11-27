@@ -359,8 +359,11 @@ describe("useMemexStore ghost engine", () => {
     await useMemexStore.getState().triggerGhostScan();
     const s = useMemexStore.getState();
     expect(s.isGhostScanning).toBe(true);
-    expect(s.ghostDiscoveries.length).toBeGreaterThanOrEqual(1);
+    // The seed yields a richer cross-era web: 4 to 6 bridges, never more than the cap.
+    expect(s.ghostDiscoveries.length).toBeGreaterThanOrEqual(4);
+    expect(s.ghostDiscoveries.length).toBeLessThanOrEqual(6);
     expect(s.ghostDiscoveries.map((d) => d.id)).toContain(BRIDGE);
+    expect(s.ghostDiscoveries.map((d) => d.id)).toContain(ghostDiscoveryId("MEM-1945-01", "MEM-2024-05"));
     const exported = JSON.parse(s.exportJson()) as Record<string, unknown>;
     expect(Object.keys(exported).sort()).toEqual(["edges", "ghostDiscoveries", "nodes", "trails"]);
   });

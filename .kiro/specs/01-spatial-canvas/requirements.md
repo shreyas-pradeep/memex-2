@@ -13,6 +13,7 @@ This specification defines the mathematical graph core, state persistence, and 6
 2. WHEN a user drags a card on the canvas, THE SYSTEM SHALL update its `(x, y)` spatial coordinates at 60fps and persist the state automatically.
 3. WHEN a card contains an image URL, THE SYSTEM SHALL render the image through the GPU-accelerated CSS filter `grayscale(100%) contrast(125%) sepia(25%)` to maintain a unified 1945 archival aesthetic.
 
+4. WHEN a card is rendered, THE SYSTEM SHALL skin it by type so each type reads at a distance: note (tungsten amber `#FFB236`, `[NOTE]`), quote (electric cyan `#38BDF8`, thick left spine, italic serif body, `[QUOTE // EXCERPT]`), artifact (CRT green `#10B981`, corner brackets, scanline tint, monospace body, `[ARTIFACT // DATA]`) and ghost (phantom violet `#B388FF`, pulsing violet glow, `[⚡ GHOST SYNAPSE]`). Body text SHALL meet WCAG AA (4.5:1) on its surface, and glows SHALL be static box-shadows whose opacity or transform animates, never an animated box-shadow, SVG filter or `backdrop-blur`.
 ### Requirement 2: Associative Links (Edges) & Graph Integrity
 **User Story:** As a thinker, I want to draw associative links between any two cards and delete cards safely, so that my knowledge graph remains corruption-free.
 

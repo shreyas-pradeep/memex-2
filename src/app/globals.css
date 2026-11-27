@@ -140,6 +140,23 @@ body {
   animation: memex-phosphor 2.4s ease-in-out infinite;
 }
 
+/* Ghost cards: the violet rim glow breathes. The overlay layer carries a static
+   box-shadow; only its opacity and scale animate (compositor-only, no filters). */
+@keyframes memex-ghost-pulse {
+  0%,
+  100% {
+    opacity: 0.15;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.85;
+    transform: scale(1.012);
+  }
+}
+.memex-ghost-pulse {
+  animation: memex-ghost-pulse 3.2s ease-in-out infinite;
+  will-change: opacity, transform;
+}
 /* Card resize controls: circular pill handles with a soft accent glow.
    `--resize-accent` is set per card by NodeResizer (amber for human cards,
    violet for ghost cards). Selectors are prefixed with `.react-flow` so they
@@ -203,6 +220,7 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .memex-edge-pulse,
   .memex-edge-pulse-reverse,
+  .memex-ghost-pulse,
   .memex-phosphor-dot {
     animation: none;
   }

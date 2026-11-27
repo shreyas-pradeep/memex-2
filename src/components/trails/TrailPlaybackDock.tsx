@@ -7,6 +7,7 @@ import { EDGE_COLORS } from "@/core/types";
 import { ExportBriefingModal } from "../canvas/ExportBriefingModal";
 import { selectActiveTrail } from "@/store/trail-selectors";
 import { useMemexStore, type MemexStore } from "@/store/useMemexStore";
+import { rgba, skinFor } from "../canvas/card-skins";
 
 const SPRING = { type: "spring", stiffness: 300, damping: 28 } as const;
 
@@ -20,10 +21,6 @@ const selectPrevStep = (s: MemexStore) => s.prevTrailStep;
 const selectToggle = (s: MemexStore) => s.toggleAutoPlay;
 const selectExit = (s: MemexStore) => s.exitTrailPlayback;
 
-function rgba(hex: string, alpha: number): string {
-  const n = parseInt(hex.slice(1), 16);
-  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
-}
 
 /** Truncates to `max` characters on a word boundary. */
 function preview(text: string, max = 140): string {
@@ -150,12 +147,24 @@ export function TrailPlaybackDock() {
 
               <div
                 className="mt-3 rounded-xl bg-[#090A0F]/80 px-3 py-2"
-                style={{ border: `1px solid ${rgba(accent, 0.25)}` }}
+                style={{
+                  border: `1px solid ${rgba(accent, 0.25)}`,
+                  ...(card ? { borderLeft: `3px solid ${skinFor(card.cardType).accent}` } : {}),
+                }}
               >
                 {card ? (
                   <>
-                    <div className="font-mono text-[10px] tracking-wider text-text-muted">
-                      {card.archivalId}
+                    <div className="flex items-center gap-2 font-mono text-[10px] tracking-wider text-text-muted">
+                      <span>{card.archivalId}</span>
+                      <span
+                        className="rounded-full px-1.5 py-px font-semibold uppercase"
+                        style={{
+                          color: skinFor(card.cardType).accent,
+                          border: `1px solid ${rgba(skinFor(card.cardType).accent, 0.5)}`,
+                        }}
+                      >
+                        {skinFor(card.cardType).label}
+                      </span>
                     </div>
                     <div className="font-serif text-[15px] font-semibold text-text-primary">
                       {card.title}

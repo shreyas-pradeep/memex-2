@@ -8,7 +8,13 @@ import {
   getChronologicalNodes,
   getEventYear,
 } from "@/core/trail-engine";
-import { EDGE_COLORS, type AssociativeEdge, type MemexCardType, type MemexNode } from "@/core/types";
+import {
+  CARD_ACCENTS,
+  EDGE_COLORS,
+  type AssociativeEdge,
+  type MemexCardType,
+  type MemexNode,
+} from "@/core/types";
 import { DEFAULT_CARD_SIZE, useMemexStore, type MemexStore } from "@/store/useMemexStore";
 import { TRAIL_CAMERA_MS, TRAIL_ZOOM } from "./TrailCameraDirector";
 
@@ -141,7 +147,7 @@ export function ArchivalTimeline() {
                     className="pointer-events-none absolute top-[17px] right-0 left-0 h-px bg-white/15"
                   />
                   {milestones.map((m) => {
-                    const accent = m.cardType === "ghost" ? EDGE_COLORS.ghost : EDGE_COLORS.human;
+                    const accent = CARD_ACCENTS[m.cardType] ?? CARD_ACCENTS.note;
                     const isHot = highlightedId === m.id;
                     return (
                       <button

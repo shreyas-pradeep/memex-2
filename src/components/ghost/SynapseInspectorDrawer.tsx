@@ -6,6 +6,7 @@ import { confidencePercent } from "@/core/ghost-engine";
 import { EDGE_COLORS, type MemexNodeData } from "@/core/types";
 import { selectNodeData, selectSelectedDiscovery } from "@/store/ghost-selectors";
 import { useMemexStore } from "@/store/useMemexStore";
+import { rgba, skinFor } from "../canvas/card-skins";
 
 const SPRING = { type: "spring", stiffness: 300, damping: 28 } as const;
 const GHOST = EDGE_COLORS.ghost;
@@ -27,10 +28,12 @@ function CardSnippet({
   data: MemexNodeData | undefined;
   accent: string;
 }) {
+  const skin = data ? skinFor(data.cardType) : null;
   return (
     <section
       aria-label={label}
       className="rounded-xl border border-white/10 bg-[#090A0F]/80 p-3 shadow-[inset_0_2px_6px_rgba(0,0,0,0.5)]"
+      style={skin ? { borderLeft: `3px solid ${skin.accent}` } : undefined}
     >
       <div
         className="font-mono text-[10px] uppercase tracking-[0.2em]"
@@ -48,8 +51,16 @@ function CardSnippet({
             {snippet(data.content)}
           </p>
           <div className="mt-2 font-mono text-[10px] uppercase tracking-wider text-text-muted">
-            {data.cardType}
-            {data.tags.length > 0 ? ` · ${data.tags.slice(0, 4).join(" / ")}` : ""}
+            <span
+              className="mr-1 rounded-full px-1.5 py-px font-semibold"
+              style={{
+                color: skin?.accent,
+                border: `1px solid ${skin ? rgba(skin.accent, 0.5) : "transparent"}`,
+              }}
+            >
+              {skin?.label}
+            </span>
+            {data.tags.length > 0 ? ` ${data.tags.slice(0, 4).join(" / ")}` : ""}
           </div>
         </>
       ) : (

@@ -15,13 +15,16 @@ import type {
 
 /**
  * Minimum raw score for a pair of cards to become a discovery. The score
- * blends keyword, concept and tag overlap (see `detectGhostSynapses`); at 0.3
- * the 7-card demo seed yields three bridges between unconnected cards.
+ * blends keyword, concept and tag overlap plus the cross-era lineage boost
+ * (see `detectGhostSynapses`). At 0.3 the 7-card demo seed yields five bridges
+ * between unconnected cards, all spanning 1945-1968 to 2024-2026. The value
+ * is deliberately not raised to 0.5: this score scale tops out near 0.65, so
+ * 0.5 would keep only the two strongest pairs.
  */
 export const DEFAULT_GHOST_THRESHOLD = 0.3;
 
 /** Default cap on discoveries returned by one scan, so the canvas is never flooded. */
-export const DEFAULT_GHOST_MAX_RESULTS = 3;
+export const DEFAULT_GHOST_MAX_RESULTS = 6;
 
 /** Calibrated confidence range of locally discovered synapses. */
 export const GHOST_CONFIDENCE_MIN = 0.78;
@@ -75,28 +78,50 @@ export function stem(word: string): string {
  * use different words for the same idea still meet ("hypertext" and "trail"
  * and "memex" all point at associative linking). Terms are stemmed at load.
  */
-export const CONCEPT_LEXICON: Readonly<Record<string, { label: string; terms: readonly string[] }>> = {
+export interface ConceptDefinition {
+  /** Human-readable theme name used in rationales. */
+  label: string;
+  /**
+   * Distinctive terms. One distinct match is enough for a card to touch the
+   * concept. Hyphenated terms ("dot-product") match both the hyphenated and the
+   * split form ("dot product") as well as the joined form ("dotproduct").
+   */
+  terms: readonly string[];
+  /**
+   * Over-generic terms ("values", "nodes", "features"). Each counts for half a
+   * match, so a card needs two distinct generic terms (or one distinctive
+   * term) before it touches the concept: one stray word never creates a bridge.
+   */
+  weakTerms?: readonly string[];
+}
+
+export const CONCEPT_LEXICON: Readonly<Record<string, ConceptDefinition>> = {
   association: {
     label: "associative linking",
     terms: [
-      "hypertext", "hyperlink", "association", "associative", "associate", "link", "trail",
+      "hypertext", "hyperlink", "association", "associative", "associate", "trail",
       "memex", "network", "nonlinear", "web", "connection", "connect", "path", "mind",
     ],
+    weakTerms: ["link"],
   },
   machines: {
     label: "computing machines",
     terms: [
       "analog", "differential", "analyzer", "mechanical", "mechanized", "computing", "computer",
       "computation", "vacuum", "tube", "eniac", "digital", "electronic", "integrator", "calculator",
-      "programmable", "programmed", "machine", "gear", "shaft", "stored",
+      "programmable", "programmed", "machine", "gear", "shaft",
     ],
+    weakTerms: ["stored"],
   },
+  // COGNITIVE_AUGMENTATION: extends the original augmentation concept.
   augmentation: {
-    label: "human augmentation and interfaces",
+    label: "cognitive augmentation",
     terms: [
-      "engelbart", "demo", "demonstration", "mouse", "augment", "augmentation", "collaboration",
+      "engelbart", "demo", "demonstration", "augment", "augmentation", "collaboration",
       "interactive", "interface", "screen", "legacy", "pioneer", "nls", "user",
+      "working-memory", "spatial-gestalt", "hci", "keyset", "intellect",
     ],
+    weakTerms: ["mouse", "bandwidth"],
   },
   knowledge: {
     label: "organizing knowledge",
@@ -109,29 +134,48 @@ export const CONCEPT_LEXICON: Readonly<Record<string, { label: string; terms: re
     label: "memory and storage",
     terms: [
       "memory", "memex", "microfilm", "store", "storage", "record", "archive", "book", "desk",
-      "supplement", "device", "stored", "retrieval",
+      "supplement", "device", "retrieval",
     ],
+    weakTerms: ["stored"],
   },
+  // RETRIEVAL_ATTENTION: extends the original retrieval concept.
   retrieval: {
     label: "attention and retrieval",
     terms: [
-      "attention", "query", "key", "retrieval", "retrieve", "rag", "search", "lookup",
-      "transformer", "selection", "select", "benchmark",
+      "attention", "query", "retrieval", "retrieve", "rag", "search", "lookup",
+      "transformer", "selection", "select", "benchmark", "memex", "dot-product",
     ],
+    weakTerms: ["key", "value", "index", "scaled", "associative", "trail"],
   },
+  // LATENT_GEOMETRY: extends the original latent concept.
   latent: {
-    label: "latent representations",
+    label: "latent geometry",
     terms: [
-      "latent", "representation", "feature", "embedding", "autoencoder", "interpretability",
-      "interpretable", "superposition", "neuron", "model", "parametric", "geometry",
+      "latent", "representation", "embedding", "autoencoder", "interpretability",
+      "interpretable", "superposition", "superposed", "neuron", "parametric", "geometry",
+      "monosemanticity", "latent-space", "sparse-autoencoders", "manifold",
     ],
+    weakTerms: ["feature", "model"],
   },
+  // GRAPH_HYPERTEXT: new concept; hypertext/link terms alias into `association`
+  // and graph/community terms alias into `graph`, but only this concept joins
+  // hypertext cards to graph-retrieval cards.
+  hypergraph: {
+    label: "hypertext and knowledge graphs",
+    terms: ["hypertext", "xanadu", "graphrag", "knowledge-graph", "non-linear"],
+    weakTerms: ["link", "node", "community", "hierarchical"],
+  },
+  // Split from the former "graphs and spatial structure" concept: a spatial
+  // canvas is not a knowledge graph, and merging them let an HCI card bridge to
+  // GraphRAG on the word "spatial" alone.
   graph: {
-    label: "graphs and spatial structure",
-    terms: [
-      "graph", "entity", "community", "cluster", "spatial", "canvas", "landmark", "layout",
-      "structure", "gestalt", "zoomable", "map",
-    ],
+    label: "graphs and structure",
+    terms: ["graph", "entity", "cluster", "structure"],
+    weakTerms: ["community"],
+  },
+  spatial: {
+    label: "spatial layout",
+    terms: ["spatial", "canvas", "landmark", "layout", "gestalt", "zoomable", "map"],
   },
   wartime: {
     label: "wartime science",
@@ -149,19 +193,108 @@ export const CONCEPT_LEXICON: Readonly<Record<string, { label: string; terms: re
   },
 };
 
-/** term (stemmed) -> concept ids, built once from `CONCEPT_LEXICON`. */
-const TERM_CONCEPTS: ReadonlyMap<string, readonly string[]> = (() => {
-  const map = new Map<string, string[]>();
-  for (const id of Object.keys(CONCEPT_LEXICON).sort()) {
-    for (const raw of CONCEPT_LEXICON[id].terms) {
-      const term = stem(raw);
-      const list = map.get(term) ?? [];
-      if (!list.includes(id)) list.push(id);
-      map.set(term, list);
+const STRONG_TERM_WEIGHT = 1;
+const WEAK_TERM_WEIGHT = 0.5;
+/** Summed weight of distinct matched terms a card needs to touch a concept. */
+const CONCEPT_TOUCH_WEIGHT = 1;
+/** Longest phrase (in words) a lexicon term may have. */
+const MAX_PHRASE_WORDS = 3;
+
+interface TermEntry {
+  concept: string;
+  /** Raw lexicon term, so one term counts once however many forms matched. */
+  termId: string;
+  weight: number;
+}
+
+/** Splits `text` into lowercase alphanumeric tokens, each stemmed (stop words kept, for adjacency). */
+function stemmedTokens(text: string): string[] {
+  return text
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((t) => t !== "")
+    .map(stem);
+}
+
+/**
+ * Compiled lexicon, built once. Single-word terms go to `unigrams`
+ * (stemmed word -> entries). Multi-word terms ("dot-product") register their
+ * space-joined stems in `phrases` ("dot product") and their concatenation in
+ * `unigrams` ("dotproduct"), so hyphenated, split and glued spellings all match.
+ */
+const COMPILED_LEXICON: {
+  unigrams: ReadonlyMap<string, readonly TermEntry[]>;
+  phrases: ReadonlyMap<string, readonly TermEntry[]>;
+} = (() => {
+  const unigrams = new Map<string, TermEntry[]>();
+  const phrases = new Map<string, TermEntry[]>();
+  const register = (map: Map<string, TermEntry[]>, key: string, entry: TermEntry) => {
+    const list = map.get(key) ?? [];
+    const at = list.findIndex((e) => e.concept === entry.concept && e.termId === entry.termId);
+    if (at === -1) list.push(entry);
+    else if (list[at].weight < entry.weight) list[at] = entry;
+    map.set(key, list);
+  };
+  for (const concept of Object.keys(CONCEPT_LEXICON).sort()) {
+    const def = CONCEPT_LEXICON[concept];
+    const groups: [readonly string[], number][] = [
+      [def.terms, STRONG_TERM_WEIGHT],
+      [def.weakTerms ?? [], WEAK_TERM_WEIGHT],
+    ];
+    for (const [terms, weight] of groups) {
+      for (const raw of terms) {
+        const parts = stemmedTokens(raw);
+        if (parts.length === 0 || parts.length > MAX_PHRASE_WORDS) continue;
+        const entry: TermEntry = { concept, termId: raw, weight };
+        if (parts.length === 1) register(unigrams, parts[0], entry);
+        else {
+          register(phrases, parts.join(" "), entry);
+          register(unigrams, parts.join(""), entry);
+        }
+      }
     }
   }
-  return map;
+  return { unigrams, phrases };
 })();
+
+/** Adjacent-word windows (2 to `MAX_PHRASE_WORDS` words) of a token list, space-joined. */
+function phraseWindows(tokens: readonly string[]): string[] {
+  const out: string[] = [];
+  for (let n = 2; n <= MAX_PHRASE_WORDS; n++) {
+    for (let i = 0; i + n <= tokens.length; i++) out.push(tokens.slice(i, i + n).join(" "));
+  }
+  return out;
+}
+
+/**
+ * Concept ids a card touches. A concept is touched when the distinct lexicon
+ * terms found in the card sum to at least 1: one distinctive term, or two
+ * generic ones (weight 0.5 each). Phrases are matched per field (title, each
+ * tag, content), so words from neighbouring tags never join into a phrase.
+ */
+function conceptsOfCard(data: MemexNodeData, unigramTerms: Iterable<string>): Set<string> {
+  const matched = new Map<string, Map<string, number>>();
+  const hit = (entries: readonly TermEntry[] | undefined) => {
+    for (const e of entries ?? []) {
+      const terms = matched.get(e.concept) ?? new Map<string, number>();
+      terms.set(e.termId, Math.max(terms.get(e.termId) ?? 0, e.weight));
+      matched.set(e.concept, terms);
+    }
+  };
+  for (const term of unigramTerms) hit(COMPILED_LEXICON.unigrams.get(term));
+  const fields = [data.title, ...data.tags, data.content];
+  for (const field of fields) {
+    const tokens = stemmedTokens(field);
+    for (const window of phraseWindows(tokens)) hit(COMPILED_LEXICON.phrases.get(window));
+  }
+  const out = new Set<string>();
+  for (const [concept, terms] of matched) {
+    let sum = 0;
+    for (const w of terms.values()) sum += w;
+    if (sum >= CONCEPT_TOUCH_WEIGHT) out.add(concept);
+  }
+  return out;
+}
 
 /**
  * Lowercase keywords of `text`: alphanumeric tokens of 3+ characters that are
@@ -194,11 +327,9 @@ function normalizedTags(data: MemexNodeData): Set<string> {
   return new Set(data.tags.map((t) => t.trim().toLowerCase()).filter((t) => t !== ""));
 }
 
-/** Concept ids touched by a card's terms. */
-function conceptsOf(terms: Iterable<string>): Set<string> {
-  const out = new Set<string>();
-  for (const term of terms) for (const c of TERM_CONCEPTS.get(term) ?? []) out.add(c);
-  return out;
+/** Sorted ids of the lexicon concepts a card touches (see `conceptsOfCard`). */
+export function conceptIdsOf(data: MemexNodeData): string[] {
+  return [...conceptsOfCard(data, termFrequencies(data).keys())].sort();
 }
 
 /** Ochiai coefficient `|A ∩ B| / sqrt(|A| |B|)`; 0 when either set is empty. */
@@ -276,10 +407,155 @@ function cmp(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
 }
 
+// ---------------------------------------------------------------------------
+// Cross-era lineage boost
+// ---------------------------------------------------------------------------
+
+/** A card dated this year or earlier counts as an early origin. */
+export const CROSS_ERA_EARLY_MAX_YEAR = 1970;
+/** A card dated this year or later counts as a modern implementation. */
+export const CROSS_ERA_LATE_MIN_YEAR = 2015;
+/** Added to the raw affinity score of a cross-era pair that shares a concept. */
+export const CROSS_ERA_BOOST = 0.2;
+
+/**
+ * True when one year is `<= 1970` and the other `>= 2015` (either order).
+ * Undated cards (`null`) never qualify.
+ */
+export function isCrossEraPair(yearA: number | null, yearB: number | null): boolean {
+  if (yearA === null || yearB === null) return false;
+  return Math.min(yearA, yearB) <= CROSS_ERA_EARLY_MAX_YEAR && Math.max(yearA, yearB) >= CROSS_ERA_LATE_MIN_YEAR;
+}
+
+/**
+ * Lineage boost added to a raw pair score before calibration: `0.2` for a
+ * cross-era pair that shares at least one concept, otherwise `0`.
+ */
+export function crossEraBoost(
+  yearA: number | null,
+  yearB: number | null,
+  sharedConceptCount: number,
+): number {
+  return sharedConceptCount > 0 && isCrossEraPair(yearA, yearB) ? CROSS_ERA_BOOST : 0;
+}
+
+/** Concept ids shared by two cards, sorted. */
+function sharedConceptIds(a: ReadonlySet<string>, b: ReadonlySet<string>): string[] {
+  return [...a].filter((c) => b.has(c)).sort();
+}
+
+// ---------------------------------------------------------------------------
+// Contextual lineage rationales (pure rule table)
+// ---------------------------------------------------------------------------
+
+/** Landmark ideas that have a curated bridge sentence. */
+export type LineageRole = "memex" | "hypertext" | "attention" | "graph-retrieval";
+
+/** Seed cards recognized by archival ID (user-made equivalents match by signals below). */
+const LINEAGE_ROLE_BY_ID: Readonly<Record<string, LineageRole>> = {
+  "MEM-1945-01": "memex",
+  "MEM-1965-02": "hypertext",
+  "MEM-2017-04": "attention",
+  "MEM-2024-05": "graph-retrieval",
+};
+
+/** Lowercased card text with hyphens as spaces, so "dot-product" and "dot product" read alike. */
+function cardText(data: MemexNodeData): string {
+  return `${data.title} ${data.tags.join(" ")} ${data.content}`.toLowerCase().replace(/[-_]+/g, " ");
+}
+
+/**
+ * Roles a card plays. Matches the seed card by archival ID, or any card by
+ * year plus vocabulary (so a user-made "Attention Is All You Need" note, dated
+ * 2017, is recognized too). Signal roles require a known year.
+ */
+export function lineageRolesOf(node: Pick<MemexNode, "id" | "data">): LineageRole[] {
+  const roles = new Set<LineageRole>();
+  for (const id of [node.id, node.data.archivalId]) {
+    const byId = LINEAGE_ROLE_BY_ID[id];
+    if (byId) roles.add(byId);
+  }
+  const year = getEventYear(node.data);
+  if (year !== null) {
+    const text = cardText(node.data);
+    if (year <= 1955 && /memex|as we may think/.test(text)) roles.add("memex");
+    if (year >= 1960 && year <= 1975 && /hypertext|xanadu/.test(text)) roles.add("hypertext");
+    if (
+      year >= CROSS_ERA_LATE_MIN_YEAR &&
+      /attention/.test(text) &&
+      /transformer|dot product|scaled|\bquer(?:y|ies)\b|\bkeys?\b/.test(text)
+    ) {
+      roles.add("attention");
+    }
+    if (
+      year >= CROSS_ERA_LATE_MIN_YEAR &&
+      (/graph ?rag/.test(text) || (/knowledge graph/.test(text) && /communit/.test(text)))
+    ) {
+      roles.add("graph-retrieval");
+    }
+  }
+  return [...roles].sort();
+}
+
+export interface LineageRationaleRule {
+  id: string;
+  /** Unordered pair of roles the rule applies to. */
+  roles: readonly [LineageRole, LineageRole];
+  text: string;
+}
+
+/**
+ * Curated bridge sentences, first match wins. The first is worded as an
+ * interpretation, like the seed attention card ("Read as retrieval..."), and
+ * deliberately states no model dimensions.
+ */
+export const LINEAGE_RATIONALE_RULES: readonly LineageRationaleRule[] = [
+  {
+    id: "bush-attention",
+    roles: ["memex", "attention"],
+    text:
+      "Direct theoretical realization (an interpretation): Bush's associative trail selection reads as scaled dot-product key-value lookup in Transformer attention.",
+  },
+  {
+    id: "bush-graphrag",
+    roles: ["memex", "graph-retrieval"],
+    text:
+      "Hierarchical graph community traversal operationalizes Bush's non-linear associative web for LLM memory retrieval.",
+  },
+  {
+    id: "nelson-graphrag",
+    roles: ["hypertext", "graph-retrieval"],
+    text: "Non-linear hypertext topology realized as multi-hop associative graph retrieval.",
+  },
+  {
+    id: "nelson-attention",
+    roles: ["hypertext", "attention"],
+    text: "Non-linear hypertext topology realized as multi-hop associative graph retrieval.",
+  },
+];
+
+/** The curated rule that applies to a pair of cards, or `null`. Symmetric. */
+export function matchLineageRule(
+  nodeA: Pick<MemexNode, "id" | "data">,
+  nodeB: Pick<MemexNode, "id" | "data">,
+): LineageRationaleRule | null {
+  const rolesA = lineageRolesOf(nodeA);
+  const rolesB = lineageRolesOf(nodeB);
+  for (const rule of LINEAGE_RATIONALE_RULES) {
+    const [x, y] = rule.roles;
+    if ((rolesA.includes(x) && rolesB.includes(y)) || (rolesA.includes(y) && rolesB.includes(x))) {
+      return rule;
+    }
+  }
+  return null;
+}
+
 /**
  * Explains a bridge: names the shared concepts and keywords, the shared tags
- * and the temporal gap between the two cards. Deterministic and symmetric in
- * its two arguments.
+ * and the temporal gap between the two cards. Cross-era pairs that share a
+ * concept get the "high-affinity conceptual nexus" sentence, and recognized
+ * landmark pairs (see `LINEAGE_RATIONALE_RULES`) get their curated sentence.
+ * Deterministic and symmetric in its two arguments.
  */
 export function synthesizeBridgeRationale(nodeA: MemexNode, nodeB: MemexNode): string {
   const [a, b] = cmp(nodeA.id, nodeB.id) <= 0 ? [nodeA, nodeB] : [nodeB, nodeA];
@@ -291,17 +567,29 @@ export function synthesizeBridgeRationale(nodeA: MemexNode, nodeB: MemexNode): s
     .sort((x, y) => y.weight - x.weight || cmp(x.term, y.term))
     .slice(0, 4)
     .map((x) => x.term);
-  const conceptsB = conceptsOf(tfB.keys());
-  const sharedConcepts = [...conceptsOf(tfA.keys())]
-    .filter((c) => conceptsB.has(c))
-    .sort()
-    .slice(0, 3)
-    .map((c) => CONCEPT_LEXICON[c].label);
+  const sharedIds = sharedConceptIds(
+    conceptsOfCard(a.data, tfA.keys()),
+    conceptsOfCard(b.data, tfB.keys()),
+  );
+  const sharedConcepts = sharedIds.slice(0, 3).map((c) => CONCEPT_LEXICON[c].label);
+
+  const yearA = getEventYear(a.data);
+  const yearB = getEventYear(b.data);
+  const crossEra = crossEraBoost(yearA, yearB, sharedIds.length) > 0;
+  const rule = matchLineageRule(a, b);
 
   const titleA = a.data.title.trim() || a.data.archivalId;
   const titleB = b.data.title.trim() || b.data.archivalId;
   const parts: string[] = [];
-  if (sharedConcepts.length > 0) {
+  if (rule !== null) {
+    parts.push(`"${titleA}" and "${titleB}" were never linked. ${rule.text}`);
+    if (shared.length > 0) parts.push(`Shared terms: ${joinList(shared)}.`);
+  } else if (crossEra) {
+    parts.push(
+      `"${titleA}" and "${titleB}" were never linked. Cards share a high-affinity conceptual nexus across ${joinList(sharedConcepts)} bridging theoretical origins with modern empirical implementations.`,
+    );
+    if (shared.length > 0) parts.push(`Shared terms: ${joinList(shared)}.`);
+  } else if (sharedConcepts.length > 0) {
     parts.push(
       `"${titleA}" and "${titleB}" were never linked, yet both draw on ${joinList(sharedConcepts)}.`,
     );
@@ -317,8 +605,6 @@ export function synthesizeBridgeRationale(nodeA: MemexNode, nodeB: MemexNode): s
   const sharedTags = [...normalizedTags(a.data)].filter((t) => normalizedTags(b.data).has(t)).sort();
   if (sharedTags.length > 0) parts.push(`They share the tag ${joinList(sharedTags)}.`);
 
-  const yearA = getEventYear(a.data);
-  const yearB = getEventYear(b.data);
   if (yearA !== null && yearB !== null) {
     const lo = Math.min(yearA, yearB);
     const hi = Math.max(yearA, yearB);
@@ -346,6 +632,74 @@ function joinList(items: readonly string[]): string {
   return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
 }
 
+/** Raw affinity of one unordered pair of cards, before the threshold. */
+export interface GhostPairScore {
+  /** Lexicographically smaller card id. */
+  sourceId: string;
+  targetId: string;
+  /** Score before the lineage boost, in `[0, 1]`. */
+  base: number;
+  /** `0` or `CROSS_ERA_BOOST`. */
+  boost: number;
+  /** `clamp01(base + boost)`. */
+  score: number;
+  /** Concept ids both cards touch, sorted. */
+  sharedConcepts: string[];
+}
+
+/** Cards sorted by id with duplicate ids dropped (first wins), so output is order-independent. */
+function sortedUniqueNodes(nodes: readonly MemexNode[]): MemexNode[] {
+  const seen = new Set<string>();
+  return [...nodes]
+    .sort((x, y) => cmp(x.id, y.id))
+    .filter((n) => (seen.has(n.id) ? false : (seen.add(n.id), true)));
+}
+
+/**
+ * Raw score of every unordered pair of cards (ordered by source id, then target
+ * id), ignoring edges and thresholds.
+ *
+ * `base = 0.3 * sqrt(cosine(TF-IDF)) + 0.5 * ochiai(concepts) + 0.2 * jaccard(tags)`;
+ * `score = clamp01(base + crossEraBoost)`. Pure; does not mutate its input.
+ */
+export function scoreGhostPairs(nodes: readonly MemexNode[]): GhostPairScore[] {
+  const sorted = sortedUniqueNodes(nodes);
+  const n = sorted.length;
+  if (n < 2) return [];
+  const tfs = sorted.map((node) => termFrequencies(node.data));
+  const df = new Map<string, number>();
+  for (const tf of tfs) for (const term of tf.keys()) df.set(term, (df.get(term) ?? 0) + 1);
+  const vectors: TermVector[] = tfs.map(
+    (tf) =>
+      new Map([...tf].map(([term, f]) => [term, f * Math.log(1 + n / (df.get(term) ?? 1))])),
+  );
+  const tags = sorted.map((node) => normalizedTags(node.data));
+  const concepts = sorted.map((node, i) => conceptsOfCard(node.data, tfs[i].keys()));
+  const years = sorted.map((node) => getEventYear(node.data));
+
+  const out: GhostPairScore[] = [];
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      const sharedConcepts = sharedConceptIds(concepts[i], concepts[j]);
+      const base = clamp01(
+        COSINE_WEIGHT * Math.sqrt(computeCosineSimilarity(vectors[i], vectors[j])) +
+          CONCEPT_WEIGHT * ochiai(concepts[i], concepts[j]) +
+          TAG_WEIGHT * jaccard(tags[i], tags[j]),
+      );
+      const boost = crossEraBoost(years[i], years[j], sharedConcepts.length);
+      out.push({
+        sourceId: sorted[i].id,
+        targetId: sorted[j].id,
+        base,
+        boost,
+        score: clamp01(base + boost),
+        sharedConcepts,
+      });
+    }
+  }
+  return out;
+}
+
 export interface DetectGhostOptions {
   /** Discovery IDs (see `ghostDiscoveryId`) the user dismissed; never suggested again. */
   dismissed?: Iterable<string>;
@@ -362,10 +716,12 @@ export interface DetectGhostOptions {
  *
  * Raw score = `0.3 * sqrt(cosine(TF-IDF of stemmed keywords))
  * + 0.5 * ochiai(concept sets from CONCEPT_LEXICON) + 0.2 * jaccard(tags)`,
- * clamped to `[0, 1]`. Confidence is the calibrated score
- * (`calibrateGhostConfidence`, within `[0.78, 0.96]`). Output is sorted by
- * score (desc) then ID (asc) and capped at `maxResults`; the result does not
- * depend on the order of `nodes` or `existingEdges`. Inputs are not mutated.
+ * plus the cross-era lineage boost (`crossEraBoost`: +0.2 when one card is
+ * dated `<= 1970`, the other `>= 2015`, and they share a concept), clamped to
+ * `[0, 1]`. Confidence is the calibrated score (`calibrateGhostConfidence`,
+ * within `[0.78, 0.96]`). Output is sorted by score (desc) then ID (asc) and
+ * capped at `maxResults`; the result does not depend on the order of `nodes`
+ * or `existingEdges`. Inputs are not mutated.
  */
 export function detectGhostSynapses(
   nodes: readonly MemexNode[],
@@ -376,50 +732,27 @@ export function detectGhostSynapses(
   const discoveredAt = options.discoveredAt ?? GHOST_EPOCH;
   const dismissed = new Set(options.dismissed ?? []);
   const connected = new Set(existingEdges.map((e) => ghostPairKey(e.source, e.target)));
-
-  // Sort by id (first occurrence wins for duplicate ids) so output is order-independent.
-  const seen = new Set<string>();
-  const sorted = [...nodes]
-    .sort((x, y) => cmp(x.id, y.id))
-    .filter((n) => (seen.has(n.id) ? false : (seen.add(n.id), true)));
-  const n = sorted.length;
-  if (n < 2) return [];
-
-  const tfs = sorted.map((node) => termFrequencies(node.data));
-  const df = new Map<string, number>();
-  for (const tf of tfs) for (const term of tf.keys()) df.set(term, (df.get(term) ?? 0) + 1);
-  const vectors: TermVector[] = tfs.map(
-    (tf) =>
-      new Map([...tf].map(([term, f]) => [term, f * Math.log(1 + n / (df.get(term) ?? 1))])),
-  );
-  const tags = sorted.map((node) => normalizedTags(node.data));
-  const concepts = tfs.map((tf) => conceptsOf(tf.keys()));
+  const byId = new Map(sortedUniqueNodes(nodes).map((node) => [node.id, node]));
 
   const found: { discovery: GhostDiscovery; score: number }[] = [];
-  for (let i = 0; i < n; i++) {
-    for (let j = i + 1; j < n; j++) {
-      const a = sorted[i];
-      const b = sorted[j];
-      const id = ghostDiscoveryId(a.id, b.id);
-      if (connected.has(ghostPairKey(a.id, b.id)) || dismissed.has(id)) continue;
-      const score = clamp01(
-        COSINE_WEIGHT * Math.sqrt(computeCosineSimilarity(vectors[i], vectors[j])) +
-          CONCEPT_WEIGHT * ochiai(concepts[i], concepts[j]) +
-          TAG_WEIGHT * jaccard(tags[i], tags[j]),
-      );
-      if (score <= 0 || score < threshold) continue;
-      found.push({
-        score,
-        discovery: {
-          id,
-          sourceId: a.id,
-          targetId: b.id,
-          rationale: synthesizeBridgeRationale(a, b),
-          confidence: calibrateGhostConfidence(score),
-          discoveredAt,
-        },
-      });
-    }
+  for (const pair of scoreGhostPairs(nodes)) {
+    const id = ghostDiscoveryId(pair.sourceId, pair.targetId);
+    if (connected.has(ghostPairKey(pair.sourceId, pair.targetId)) || dismissed.has(id)) continue;
+    if (pair.score <= 0 || pair.score < threshold) continue;
+    const a = byId.get(pair.sourceId);
+    const b = byId.get(pair.targetId);
+    if (a === undefined || b === undefined) continue;
+    found.push({
+      score: pair.score,
+      discovery: {
+        id,
+        sourceId: pair.sourceId,
+        targetId: pair.targetId,
+        rationale: synthesizeBridgeRationale(a, b),
+        confidence: calibrateGhostConfidence(pair.score),
+        discoveredAt,
+      },
+    });
   }
   const limit = Math.max(0, Math.floor(options.maxResults ?? DEFAULT_GHOST_MAX_RESULTS));
   return found

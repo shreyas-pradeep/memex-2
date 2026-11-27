@@ -11,6 +11,19 @@ export const EDGE_COLORS: Record<LinkOrigin, string> = {
 };
 
 /**
+ * Accent color per card type: tungsten amber for notes, electric cyan for
+ * quotes, terminal CRT green for artifacts, phantom violet for ghost insights.
+ * Note and ghost deliberately reuse the edge colors (`EDGE_COLORS`), which are
+ * unchanged: amber still means human, violet still means ghost.
+ */
+export const CARD_ACCENTS: Record<MemexCardType, string> = {
+  note: EDGE_COLORS.human,
+  quote: "#38BDF8",
+  artifact: "#10B981",
+  ghost: EDGE_COLORS.ghost,
+};
+
+/**
  * Dialectical stance of an edge, orthogonal to its `origin`:
  * `supports` (default), `refutes` (a tension) or `synthesizes` (a resolution).
  */

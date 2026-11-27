@@ -18,6 +18,7 @@ import {
   serializeGraph,
   toggleEdgePolarity as toggleEdgePolarityPure,
 } from "@/core/graph-engine";
+import { CARD_ACCENTS } from "@/core/types";
 import type {
   AssociativeEdge,
   AssociativeEdgeData,
@@ -794,13 +795,8 @@ export const useMemexStore = create<MemexStore>()((set, get) => {
 
 export type { AssociativeEdge, MemexCardType, MemexNode };
 
-/** Reference accent per card type (a naming alias; components keep their own styles). */
-export const TYPE_COLORS = {
-  note: "#FFB236",
-  quote: "#60A5FA",
-  artifact: "#34D399",
-  ghost: "#B388FF",
-} as const satisfies Record<MemexCardType, string>;
+/** Reference accent per card type (alias of `CARD_ACCENTS` in `core/types`). */
+export const TYPE_COLORS: Record<MemexCardType, string> = CARD_ACCENTS;
 
 /**
  * Describes how the Ghost Engine is configured today. Descriptive only: the
