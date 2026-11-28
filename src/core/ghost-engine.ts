@@ -784,6 +784,118 @@ export function pairAffinity(
   };
 }
 
+// ---------------------------------------------------------------------------
+// Magnetic affinity (Spec 09): the calibration extended below the threshold
+// ---------------------------------------------------------------------------
+
+/**
+ * Affinity scale used by magnetic snapping. Above the detection threshold it IS
+ * the calibrated confidence (`calibrateGhostConfidence`, the X% on synapse
+ * pills). Below it, the scale ramps linearly from 0 (raw score 0) up to the
+ * calibrated confidence AT the threshold, so it is continuous, monotone
+ * non-decreasing and stays within `[0, 1]`.
+ *
+ * The ramp ends at `calibrateGhostConfidence(threshold)`, which is 0.87 for the
+ * default threshold 0.3 (the calibration is linear from 0.78 at score 0, so 0.78
+ * is only the value at score 0). Ending the ramp at 0.78 instead would make the
+ * scale jump from 0.78 to 0.87 at the threshold.
+ *
+ * Only the magnetic path uses this. `detectGhostSynapses`, `scoreGhostPairs`,
+ * `pairAffinity` and the pill percentages keep using the calibrated value alone.
+ */
+export function magneticAffinity(rawScore: number, threshold: number = DEFAULT_GHOST_THRESHOLD): number {
+  const s = clamp01(rawScore);
+  if (s <= 0) return 0;
+  const t = clamp01(threshold);
+  if (s >= t) return calibrateGhostConfidence(s);
+  const atThreshold = calibrateGhostConfidence(t);
+  return Math.round(atThreshold * (s / t) * 1000) / 1000;
+}
+
+/**
+ * The raw score at which `magneticAffinity` reaches `minAffinity` below the
+ * threshold: `threshold * minAffinity / calibrateGhostConfidence(threshold)`,
+ * about 0.19 for minAffinity 0.55 on the default threshold (before rounding to
+ * three decimals). Scores at or above the threshold always qualify when
+ * `minAffinity` is at most their calibrated value.
+ */
+export function magneticRawCutoff(minAffinity: number, threshold: number = DEFAULT_GHOST_THRESHOLD): number {
+  const t = clamp01(threshold);
+  return (t * minAffinity) / calibrateGhostConfidence(t);
+}
+
+/** Affinity of a pair on the magnetic scale, with the evidence the guard and the rationale use. */
+export interface MagneticPairAffinity {
+  /** Raw score in `[0, 1]`, identical to `scoreGhostPairs` for the same corpus. */
+  score: number;
+  /**
+   * `magneticAffinity(score)`, except `0` for a pair BELOW the detection threshold that shares
+   * neither a concept nor a tag (the spurious-pair guard). Pairs at or above the threshold are
+   * never gated.
+   */
+  affinity: number;
+  /** True when the pair scores below the detection threshold (the Ghost engine would not suggest it). */
+  subThreshold: boolean;
+  /** Concept ids both cards touch, sorted. */
+  sharedConcepts: string[];
+  /** Normalized tags both cards carry, sorted. */
+  sharedTags: string[];
+}
+
+/**
+ * Affinity of the pair (`a`, `b`) on the magnetic scale (see `magneticAffinity`)
+ * with the spurious-pair guard applied. Symmetric, pure, O(1) per pair given `ctx`.
+ */
+export function pairMagneticAffinity(
+  a: Pick<MemexNode, "id">,
+  b: Pick<MemexNode, "id">,
+  ctx: AffinityContext,
+  threshold: number = DEFAULT_GHOST_THRESHOLD,
+): MagneticPairAffinity {
+  const none: MagneticPairAffinity = { score: 0, affinity: 0, subThreshold: false, sharedConcepts: [], sharedTags: [] };
+  if (a.id === b.id) return none;
+  const [loId, hiId] = cmp(a.id, b.id) <= 0 ? [a.id, b.id] : [b.id, a.id];
+  const lo = ctx.features.get(loId);
+  const hi = ctx.features.get(hiId);
+  if (lo === undefined || hi === undefined) return none;
+  const pair = scorePreparedPair(loId, hiId, lo, hi);
+  const sharedTags = [...lo.tags].filter((t) => hi.tags.has(t)).sort();
+  const subThreshold = pair.score < threshold;
+  const evidence = pair.sharedConcepts.length > 0 || sharedTags.length > 0;
+  return {
+    score: pair.score,
+    affinity: subThreshold && !evidence ? 0 : magneticAffinity(pair.score, threshold),
+    subThreshold,
+    sharedConcepts: pair.sharedConcepts,
+    sharedTags,
+  };
+}
+
+/**
+ * Rationale for a magnetic pair that the Ghost engine would NOT suggest: it only
+ * states what the two cards verifiably share (concepts from the lexicon, tags),
+ * in the tone of `synthesizeBridgeRationale`. Deterministic and symmetric.
+ */
+export function synthesizeSharedRationale(
+  nodeA: MemexNode,
+  nodeB: MemexNode,
+  sharedConcepts: readonly string[],
+  sharedTags: readonly string[],
+): string {
+  const [a, b] = cmp(nodeA.id, nodeB.id) <= 0 ? [nodeA, nodeB] : [nodeB, nodeA];
+  const titleA = a.data.title.trim() || a.data.archivalId;
+  const titleB = b.data.title.trim() || b.data.archivalId;
+  const parts = [`"${titleA}" and "${titleB}" were never linked.`];
+  if (sharedConcepts.length > 0) {
+    const labels = sharedConcepts.slice(0, 3).map((c) => CONCEPT_LEXICON[c]?.label ?? c);
+    parts.push(`Shared ${labels.length === 1 ? "concept" : "concepts"}: ${joinList(labels)}.`);
+  }
+  if (sharedTags.length > 0) {
+    parts.push(`Shared ${sharedTags.length === 1 ? "tag" : "tags"}: ${joinList(sharedTags.slice(0, 3))}.`);
+  }
+  return parts.join(" ");
+}
+
 export interface DetectGhostOptions {
   /** Discovery IDs (see `ghostDiscoveryId`) the user dismissed; never suggested again. */
   dismissed?: Iterable<string>;

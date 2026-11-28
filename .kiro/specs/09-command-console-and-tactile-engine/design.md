@@ -41,8 +41,8 @@ Changed: `types.ts` (`cassetteId?`, `cassetteTitle?`), `ghost-engine.ts` (shared
 
 | # | Request said | Built | Why |
 |---|---|---|---|
-| a | Euclidean distance < 260 px | the gap between the two card rectangles, below 260 | Cards are 340 x 230. A center distance below 260 means the cards overlap heavily, so nothing could snap before touching. |
-| b | affinity >= 0.70 | calibrated confidence (the X% on pills) >= 0.70 | Raw ghost scores top out near 0.65, so 0.70 never applies to them. Calibrated confidence is 0 below the detection threshold and 0.78 to 0.96 above it, so every discoverable pair qualifies and nothing below the threshold snaps. |
+| a | Euclidean distance < 260 px (later 380 px) | the gap between the two card rectangles, below `MAGNETIC_RANGE_PX = 380` | Cards are 340 x 230. A center distance below the range means the cards overlap heavily, so nothing could snap before touching. The range grew from 260 to 380 during calibration: on the demo seed the related unconnected pairs sit 370 to 379 px apart. |
+| b | affinity >= 0.70 (later 0.55) | magnetic affinity >= `MAGNETIC_MIN_AFFINITY = 0.55` | Raw ghost scores top out near 0.65, so a floor on raw scores would not work. The first build compared the calibrated confidence, which is 0 below the detection threshold and 0.87 to 0.96 above it, so lowering 0.70 to 0.55 on that scale admits exactly the same pairs. The calibration therefore got a magnetic extension below the threshold (section 3a). |
 | c | `findMagneticTarget(draggedRect/center, ...)` | `findMagneticTarget(draggedRect, candidates, nodes, range)` | The rectangle form is needed for the gap. A center is just a zero-size rect. |
 | d | `Partial<MemexStore>` from the importer | `BundleImportResult` | Core cannot import the store. The store applies the result. |
 | e | dangling edges rejected or dropped | rejected | See section 7. |
@@ -64,14 +64,14 @@ rect(card)  = { x, y, w, h }   w,h from style.width/height, else node.width/heig
 dx = max(a.x - (b.x + b.w), b.x - (a.x + a.w), 0)
 dy = max(a.y - (b.y + b.h), b.y - (a.y + a.h), 0)
 gap(a, b) = hypot(dx, dy)         0 when the rectangles overlap or touch
-snap range: gap < MAGNETIC_RANGE_PX (260), strictly
+snap range: gap < MAGNETIC_RANGE_PX (380), strictly
 ```
 
 ```
  dragged                       target
 ┌────────┐                    ┌────────┐
-│        │◄──── dx = 160 ────►│        │      gap = 160 (< 260: in range)
-└────────┘                    └────────┘      centers are 500 apart (> 260)
+│        │◄──── dx = 160 ────►│        │      gap = 160 (< 380: in range)
+└────────┘                    └────────┘      centers are 500 apart (> 380)
 ```
 
 The gap is symmetric, never negative, and 0 for overlapping cards.
@@ -79,14 +79,27 @@ The gap is symmetric, never negative, and 0 for overlapping cards.
 ### Two phases
 1. **Drag start** (`beginMagneticDrag`): `buildMagneticCandidates(draggedId, nodes, edges)`.
    - Build one `AffinityContext` for the whole canvas (TF-IDF vectors, tag sets, concept sets, years; O(canvas)).
-   - For every other card that is not connected to the dragged one (real edges, either direction), `pairAffinity` gives `{ score, affinity, sharedConcepts }`. Keep affinity >= 0.70.
-   - For each kept pair compute the concept label (first shared lexicon concept, else a shared tag, else a shared keyword, else "related ideas") and `synthesizeBridgeRationale`.
+   - For every other card that is not connected to the dragged one (real edges, either direction), `pairMagneticAffinity` gives `{ score, affinity, subThreshold, sharedConcepts, sharedTags }`. Keep affinity >= 0.55 (section 3a).
+   - For each kept pair compute the concept label (first shared lexicon concept, else a shared tag, else a shared keyword, else "related ideas") and the rationale: `synthesizeBridgeRationale` for a pair the Ghost engine would suggest, `synthesizeSharedRationale` below the threshold.
    - Sort by affinity descending then id. The store caches the list, plus a `Map` of the candidate cards, in a module-level variable.
 2. **Per frame** (`updateMagneticDrag`): read the dragged card (O(1) through an index hint, falling back to a search only if the order changed), compute its rect, call `findMagneticTarget`, which loops over the candidates and computes one `rectGap` each. Nearest wins; ties go to the higher affinity, then the smaller id. The store writes `magneticTarget` only when `sameMagneticTarget` says it changed.
 
 **Why per-frame cost is O(candidates):** no text, vectors or sorting run per frame; the other cards do not move while one card is dragged, so their rectangles are cached at drag start. A canvas of 300 unrelated cards and 3 related ones costs 3 gap checks per frame (a test drives 2000 frames).
 
 `pairAffinity` returns exactly what the scan computes: both go through the same `prepareCorpusFeatures` and `scorePreparedPair`, and a test compares them for random corpora. `detectGhostSynapses` is unchanged.
+### 3a. Magnetic affinity scale (calibration extended below the threshold)
+```
+s  = raw pair score in [0, 1]          t = DEFAULT_GHOST_THRESHOLD = 0.3
+c(s) = calibrateGhostConfidence(s) = 0.78 + 0.18 * min(s / 0.6, 1)      (the X% on synapse pills)
+magneticAffinity(s) = 0                      if s <= 0
+                    = c(s)                   if s >= t        (unchanged: same number as the pill)
+                    = c(t) * (s / t)         if 0 < s < t     (ramp; c(0.3) = 0.87)
+```
+The scale is continuous at `t`, monotone non-decreasing and within [0, 1] (property tests, 300 runs each). The request described the ramp as ending at the calibration floor 0.78, but `c` is 0.78 only at score 0; at the threshold it is 0.87, so a ramp to 0.78 would jump from 0.78 to 0.87 at `t`. The ramp ends at `c(t)` to stay continuous. With `MAGNETIC_MIN_AFFINITY = 0.55` the raw cutoff below the threshold is `t * 0.55 / c(t) = 0.3 * 0.55 / 0.87 = 0.1897` (`magneticRawCutoff`); the alternative end at 0.78 would give 0.2115, and the demo seed gives the same candidates for both.
+**Guard against spurious pairs.** A pair with raw score below `t` is a candidate only if the two cards share at least one lexicon concept or one normalized tag. Without it, a pair of unrelated cards that merely repeat a few words (cosine alone reaches 0.19 and more) would pull each other. Pairs at or above `t` are never gated. `pairMagneticAffinity` returns the gated affinity (0 for a gated pair) together with `sharedConcepts` and `sharedTags`.
+**What did not change.** `detectGhostSynapses`, `scoreGhostPairs`, `scorePreparedPair`, `pairAffinity`, the ghost scan, discovery confidences and the synapse pill percentages. The tests pin this with snapshots generated from the code at commit 31452c8 (`ghost-scan-regression.test.ts`). The whisper pill shows `round(magnetic affinity * 100)`, which equals the synapse pill number for any pair the Ghost engine would suggest.
+### 3b. Single-card isolation
+React Flow chooses what to drag in `XYDrag.startDrag`, which runs once the pointer has moved more than `nodeDragThreshold` (4 px here): it reads `selected` from its node lookup (`getDragItems`), and drags EVERY selected card unless the pressed card is unselected. d3-drag's `mousedown` handler is bound to the card element, and a capture-phase listener on an ancestor runs before it. `SingleCardDragIsolation` therefore listens for `pointerdown` in the capture phase on the `.react-flow` element and, when `shouldIsolateDrag` holds (plain primary press, pressed card selected, more than one card selected, no Shift, Cmd or Ctrl), calls React Flow's own `addSelectedNodes([id])`, which emits the select changes to `onNodesChange` synchronously. The node lookup follows when React commits that store update (`StoreUpdater` runs `setNodes` in an effect; the update is a sync-lane render that finishes in the same task, long before the 4 px threshold is crossed). Two cases: a press on a card reaches it directly; after a box selection React Flow lays `.react-flow__nodesselection-rect` over the cards and the press lands on it, so the card is found with `document.elementsFromPoint` and, because that drag reports through `onSelectionDragStart/Drag/Stop` with no `nodeId`, the canvas forwards those callbacks to the same `magneticDragStart/Move/Stop` with `(nodes[0].id, nodes.length)`. Controls inside a card (`.nodrag`, handles, resize handles, inputs, buttons) are left alone. With Shift, Cmd or Ctrl held, or when React Flow still reports several dragged cards (`draggedCount > 1`), the drag is a group drag and no target is offered; the store also refuses a session for a selected card while several cards are selected. Shipped: the collapse approach; the fallback (primary card of a group drag) was not needed and was not built. Not exercised in a real browser (see tasks).
 
 ### Snap
 `snapConnect(state, sourceId, targetId, { rationale, strength })` in `graph-engine.ts` connects like `acceptDiscovery` (origin `human`, id `e-human-<source>-<target>`), consumes any discovery for the pair (either orientation) and returns the same state for a self-pair, a missing card, or a pair already connected in either direction. The store commits it once and sets `lastSnapEdgeId` for 1200 ms.
@@ -95,7 +108,7 @@ The gap is symmetric, never negative, and 0 for overlapping cards.
 
 All SVG, no filters, `transform` and `opacity` only.
 
-- **Where:** one overlay component inside `<ReactFlow>` using `ViewportPortal`, mounted once. Z-order: the arc layer has `z-index: 900` (above idle cards and edges at 0, below the dragged card, which React Flow elevates to 1000 on select) and the whisper pill `1100`; both set `pointer-events: none`, so a drag is never blocked. It subscribes to `magneticTarget` (changes only when the offer changes) and reads the two card rectangles for positions.
+- **Where:** one overlay component, a plain child of `<ReactFlow>` (not a `ViewportPortal`), mounted once. The SVG filament and the whisper pill both have `z-index: 50` inside `.react-flow`, which React Flow makes a stacking context (`position: relative; z-index: 0`); inside it the renderer is z 4 and the panels z 5, so 50 is above everything React Flow draws. The dragged card is z 1000 only inside `.react-flow__viewport`, a separate stacking context, so it cannot cover the pill. A `ViewportPortal` child could not do this: it lives inside the viewport, where a selected (dragged) card is z 1000, so z 50 would hide a pill whose arc midpoint lies on the dragged card (cards that touch or overlap). The filament draws in flow coordinates through a `<g transform="translate(x y) scale(zoom)">` (`viewTransformAttribute`) and the pill sits at `flowToScreen(mid)`, at constant size at any zoom. The filament ends sit on the facing card borders, so drawing it above the cards hides nothing. Every wrapper (the SVG, its groups, the pill and its inner box) has `pointer-events: none` both as the Tailwind class and inline, so a drag is never blocked. It subscribes to `magneticTarget` (changes only when the offer changes), the two card rectangles and the pan and zoom (all primitives).
 - **Path:** a quadratic Bezier from the closest point on the dragged rectangle to the closest point on the target rectangle. Closest points: clamp the other rectangle's center into this rectangle (and the reverse). Control point = midpoint pushed 20% of the length along the normal, so the arc always bows the same way.
   ```
   M p0 Q c p1      c = mid + n * 0.2 * |p1 - p0|
@@ -103,7 +116,7 @@ All SVG, no filters, `transform` and `opacity` only.
 - **Layers:** a wide translucent stroke (`#B388FF` at 0.25, width 6) under a crisp 1px stroke (`#B388FF`), plus registration `+` marks at both ends, as the ghost edges do.
 - **Motion:** the crisp stroke has `stroke-dasharray: 6 8` and a CSS animation of `stroke-dashoffset` (a "marching" pulse). The jitter is a `transform: translate(Xpx, Ypx)` keyframe animation of +-1px on the `<g>` wrapper (steps, 90 ms). Neither touches layout or paint-heavy properties.
 - **Label:** a small pill at the midpoint, "⚡ 87% · associative linking", in `font-mono`, the same pill style as the synapse pills.
-- **Target card:** a static violet `box-shadow` ring while targeted (set through a class, not animated).
+- **Target card:** an absolutely positioned, pointer-events-none overlay inside `ArchivalCardNode` with `ring-2 ring-accent-ghost/60` (Tailwind 4 ring = static `box-shadow`; `accent-ghost` is `#B388FF`, used instead of `purple-400` to stay on the palette), mounted only while the card is the target, driven by `selectIsMagneticTarget(cardId)` (a boolean, so only the old and new target re-render). Its opacity pulses 0.55 to 1 (`memex-target-ring`, 1.4 s, opacity only); under `prefers-reduced-motion` the ring is steady. It sits on the border edge like the trail, spotlight, hover, selection and ghost overlays, so it adds no layout, and the card's own opacity (trail and spotlight dim) multiplies it. One haptic tick, `navigator.vibrate?.(8)` (feature-detected, try/catch, skipped under reduced motion), fires in an effect when the boolean turns true: once per new target, never per frame.
 - **Snap:** the new edge (`lastSnapEdgeId`) plays one amber `#FFB236` pulse (opacity 0 to 1 to 0.4 over 1.2 s). The arc fades out.
 - **Reduced motion:** no dash animation, no jitter, no pulse keyframes: the arc is static and the snap is an opacity step.
 
@@ -320,8 +333,10 @@ Names: see Requirement 5.6 and 5.7. The name map is computed from cards sorted b
 File: `src/core/__tests__/vault-and-magnetic.property.test.ts` (core), `src/store/__tests__/command-console.test.ts` (store).
 
 - **Property 1 (Vault Round-Trip).** For any valid graph state (optional fields, cassette fields, edge style, trails with color, discoveries) and any ghost settings: `validateAndImportBundle(exportMemexBundle(state))` is ok and its state deep-equals the input, even when the input carried runtime fields; `export(import(export(s)))` equals `export(s)` for a fixed time; the legacy `serializeGraph` format imports as `1.x` with a warning and the same state; the demo seed round-trips in both formats.
-- **Property 2 (Magnetic Threshold).** For random scenes (related and unrelated cards, random sizes and positions, random edges): `computeMagneticTarget` returns the nearest eligible card (gap below 260, calibrated affinity at least 0.70, not connected, distinct) judged by an independent oracle built from `scoreGhostPairs`, or `null` when none is eligible, and both outcomes occur in the run; moving the dragged card beyond the range always gives `null`; a gap of exactly 260 does not snap; centers far apart with close rectangles do.
+- **Property 2 (Magnetic Threshold).** For random scenes (related and unrelated cards, random sizes and positions, random edges): `computeMagneticTarget` returns the nearest eligible card (gap below `MAGNETIC_RANGE_PX` = 380, magnetic affinity at least `MAGNETIC_MIN_AFFINITY` = 0.55 with the sub-threshold guard, not connected, distinct) judged by an independent oracle built from `scoreGhostPairs` that restates the scale and the guard, or `null` when none is eligible, and both outcomes occur in the run; moving the dragged card beyond the range always gives `null`; a gap of exactly 380 does not snap; centers far apart with close rectangles do.
 - **Property 3 (Cassette Bounding).** For arbitrary rectangles (negative coordinates, zero size, NaN, infinities, huge values): `cassetteBounds` strictly encloses every valid rectangle (all four corners) with non-negative size, `null` with none valid; `moveCassette` shifts members by exactly the delta, preserves pairwise offsets, leaves non-members identical and ignores non-finite deltas.
+- **Magnetic calibration** (`magnetic-calibration.property.test.ts`, 300 runs): `magneticAffinity` is within [0, 1], zero at 0, monotone, equal to the calibrated confidence at and above the threshold, continuous at the threshold, linear below it; the raw cutoff is 0.1897 for a 0.55 floor; the guard gates sub-threshold pairs without a shared concept or tag and never touches pairs above the threshold; candidates, rationales and the pill percentage are consistent. The arc view transform (`flowToScreen`, `viewTransformAttribute`) is checked against `p * zoom + translate`.
+- **Single-card isolation** (`drag-isolation.property.test.ts`, 300 runs; `magnetic-isolation.test.ts` for the store flow on the demo seed with and without a modifier). **Ghost scan unchanged** (`ghost-scan-regression.test.ts`, snapshots from commit 31452c8). **Haptics** (`haptics.test.ts`).
 - **Properties of affinity and dock.** `pairAffinity` equals the scan for random corpora, in both argument orders. The dock reducer matches an independent reference model over arbitrary sequences of key and tab events; `T` and `/` act only when allowed, the slash is never left to type, Escape never opens and only collapses an open dock.
 - **Unit tests.** Malformed bundles (bad JSON, schema, version, oversized, pollution keys, unsafe URLs, dangling references, duplicate ids, bad numbers and enums, limits); no API key in a bundle; ZIP writer and reader round trip with CRC and header checks; filename sanitizer (never empty, no separators, unique, order independent); Obsidian wikilinks both ways with escaped rationale; spotlight tiers, AND logic, tag cloud, memo equality and signature; store flows for snapping, the dock, spotlight, cassettes and bundles.
 

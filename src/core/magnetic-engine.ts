@@ -5,8 +5,9 @@ import {
   extractKeywords,
   ghostPairKey,
   normalizedTags,
-  pairAffinity,
+  pairMagneticAffinity,
   synthesizeBridgeRationale,
+  synthesizeSharedRationale,
 } from "./ghost-engine";
 import type { AssociativeEdge, MemexNode } from "./types";
 
@@ -18,8 +19,9 @@ import type { AssociativeEdge, MemexNode } from "./types";
  * Two phases keep the drag at 60 fps:
  * 1. `buildMagneticCandidates` runs ONCE at drag start. It scores the dragged
  *    card against every other card (TF-IDF, concepts, tags) and keeps the
- *    unconnected pairs with a calibrated affinity of at least
- *    `MAGNETIC_MIN_AFFINITY`.
+ *    unconnected pairs whose magnetic affinity (`magneticAffinity`: the
+ *    calibrated confidence at and above the Ghost detection threshold, a linear
+ *    ramp below it) is at least `MAGNETIC_MIN_AFFINITY`.
  * 2. `findMagneticTarget` runs per frame and only measures the rectangle gap to
  *    each candidate: O(candidates), no text analysis.
  *
@@ -27,21 +29,22 @@ import type { AssociativeEdge, MemexNode } from "./types";
  */
 
 /** A target pulls when the gap between the two card rectangles is below this (px). */
-export const MAGNETIC_RANGE_PX = 260;
-
+export const MAGNETIC_RANGE_PX = 380;
 /**
- * Minimum calibrated affinity (the X% shown on synapse pills). Calibrated
- * confidence is 0 below the detection threshold and within [0.78, 0.96] above
- * it, so in practice every pair the Ghost engine would discover qualifies and
- * nothing below the threshold ever snaps.
+ * Minimum magnetic affinity (the X% shown in the whisper pill). The scale is the
+ * calibrated confidence for pairs the Ghost engine would suggest (raw score at or
+ * above `DEFAULT_GHOST_THRESHOLD`, 0.87 to 0.96 on the default threshold) and a
+ * linear ramp below it (see `magneticAffinity`), so 0.55 admits raw scores from
+ * `magneticRawCutoff(0.55)`, about 0.19 on the default threshold of 0.3. A pair
+ * below the threshold also needs a shared concept or tag (the guard in
+ * `pairMagneticAffinity`).
  */
-export const MAGNETIC_MIN_AFFINITY = 0.7;
-
+export const MAGNETIC_MIN_AFFINITY = 0.55;
 /** What the dragged card would connect to if dropped now. `sourceId` is the dragged card. */
 export interface MagneticTarget {
   sourceId: string;
   targetId: string;
-  /** Calibrated affinity in `[0.78, 0.96]` (see `MAGNETIC_MIN_AFFINITY`). */
+  /** Magnetic affinity in `[MAGNETIC_MIN_AFFINITY, 0.96]`; the whisper pill shows `round(affinity * 100)`%. */
   affinity: number;
   /** Human-readable theme the two cards share, e.g. "associative linking". */
   concept: string;
@@ -66,8 +69,9 @@ function sharedTheme(a: MemexNode, b: MemexNode, conceptIds: readonly string[]):
 
 /**
  * Candidates for dragging `draggedId`: every other card that is not connected
- * to it (real edges, either direction) and whose calibrated affinity with it
- * is at least `MAGNETIC_MIN_AFFINITY`. Sorted by affinity (desc) then id. Empty
+ * to it (real edges, either direction) and whose magnetic affinity with it
+ * is at least `MAGNETIC_MIN_AFFINITY` (a pair below the Ghost detection threshold
+ * must also share a concept or a tag). Sorted by affinity (desc) then id. Empty
  * when the dragged card does not exist. A pair that is only a pending ghost
  * discovery still qualifies (the snap then consumes the discovery).
  */
@@ -86,14 +90,17 @@ export function buildMagneticCandidates(
     if (other.id === draggedId || seen.has(other.id)) continue;
     seen.add(other.id);
     if (connected.has(ghostPairKey(draggedId, other.id))) continue;
-    const { affinity, sharedConcepts } = pairAffinity(dragged, other, ctx);
+    const { affinity, sharedConcepts, sharedTags, subThreshold } = pairMagneticAffinity(dragged, other, ctx);
     if (affinity < MAGNETIC_MIN_AFFINITY) continue;
     out.push({
       sourceId: draggedId,
       targetId: other.id,
       affinity,
       concept: sharedTheme(dragged, other, sharedConcepts),
-      rationale: synthesizeBridgeRationale(dragged, other),
+      // The Ghost engine's own rationale where it would suggest the pair; a plain statement of what is shared below it.
+      rationale: subThreshold
+        ? synthesizeSharedRationale(dragged, other, sharedConcepts, sharedTags)
+        : synthesizeBridgeRationale(dragged, other),
     });
   }
   return out.sort((x, y) => y.affinity - x.affinity || cmp(x.targetId, y.targetId));

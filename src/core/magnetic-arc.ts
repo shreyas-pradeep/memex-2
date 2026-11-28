@@ -91,6 +91,23 @@ export function arcGeometry(a: Rect, b: Rect): ArcGeometry {
   };
 }
 
+/** Pan and zoom of the canvas, as React Flow keeps them: a flow point `p` is drawn at `p * zoom + (x, y)`. */
+export interface ViewTransform {
+  x: number;
+  y: number;
+  zoom: number;
+}
+
+/** Screen position (relative to the canvas element) of a point in flow coordinates. */
+export function flowToScreen(point: Point, view: ViewTransform): Point {
+  return { x: point.x * view.zoom + view.x, y: point.y * view.zoom + view.y };
+}
+
+/** SVG `transform` attribute that maps flow coordinates to screen coordinates for everything inside it. */
+export function viewTransformAttribute(view: ViewTransform): string {
+  return `translate(${fmt(view.x)} ${fmt(view.y)}) scale(${view.zoom})`;
+}
+
 /** Gap between the two rectangles; re-exported so the overlay does not import two modules for one number. */
 export const arcGap = rectGap;
 

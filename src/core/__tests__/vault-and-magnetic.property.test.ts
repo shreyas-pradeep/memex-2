@@ -21,6 +21,7 @@ import {
   type DockTab,
 } from "../command-dock";
 import {
+  DEFAULT_GHOST_THRESHOLD,
   GHOST_CONFIDENCE_MAX,
   GHOST_CONFIDENCE_MIN,
   buildAffinityContext,
@@ -626,14 +627,24 @@ describe("pairAffinity (ghost-engine)", () => {
 // P2: Magnetic threshold invariant
 // ---------------------------------------------------------------------------
 
-/** Independent oracle: affinity from the public scan, gap from plain arithmetic. */
+/**
+ * Independent oracle for the magnetic scale: the raw score and shared concepts come from the public scan,
+ * the scale and the sub-threshold guard are restated here from the spec (not taken from `magneticAffinity`).
+ * At or above the detection threshold: the calibrated confidence. Below it: a linear ramp from 0 up to the
+ * calibrated confidence at the threshold, and only for pairs that share a concept or a tag.
+ */
 function oracleAffinity(nodes: readonly MemexNode[], aId: string, bId: string): number {
   const [lo, hi] = aId <= bId ? [aId, bId] : [bId, aId];
   const pair = scoreGhostPairs(nodes).find((p) => p.sourceId === lo && p.targetId === hi);
-  if (pair === undefined || pair.score <= 0 || pair.score < 0.3) return 0;
-  return calibrateGhostConfidence(pair.score);
+  if (pair === undefined || pair.score <= 0) return 0;
+  if (pair.score >= DEFAULT_GHOST_THRESHOLD) return calibrateGhostConfidence(pair.score);
+  const tagsOf = (id: string): Set<string> =>
+    new Set((nodes.find((n) => n.id === id)?.data.tags ?? []).map((t) => t.trim().toLowerCase()));
+  const tagsLo = tagsOf(lo);
+  const sharesTag = [...tagsOf(hi)].some((t) => tagsLo.has(t));
+  if (pair.sharedConcepts.length === 0 && !sharesTag) return 0;
+  return Math.round(calibrateGhostConfidence(DEFAULT_GHOST_THRESHOLD) * (pair.score / DEFAULT_GHOST_THRESHOLD) * 1000) / 1000;
 }
-
 function sizeOf(n: MemexNode): { w: number; h: number } {
   return {
     w: typeof n.style?.width === "number" ? n.style.width : DEFAULT_CARD_SIZE.width,
@@ -684,7 +695,7 @@ const sceneArb: fc.Arbitrary<Scene> = fc
   });
 
 describe("Property 2: Magnetic Threshold Invariant", () => {
-  it("snaps only to unconnected cards within the rectangle-gap range and affinity >= 0.70, nearest first", () => {
+  it("snaps only to unconnected cards within the rectangle-gap range (< MAGNETIC_RANGE_PX) and magnetic affinity >= MAGNETIC_MIN_AFFINITY, nearest first", () => {
     let withTarget = 0;
     let withoutTarget = 0;
     fc.assert(
@@ -737,19 +748,19 @@ describe("Property 2: Magnetic Threshold Invariant", () => {
     );
   });
 
-  it("uses a strict range: a gap of exactly 260 does not snap, 259.9 does", () => {
+  it("uses a strict range: a gap of exactly MAGNETIC_RANGE_PX does not snap, 0.1 px less does", () => {
     const a = cardOf("a", 0, 0, 0, 0);
     const b = (gap: number) => cardOf("b", 0, 1, DEFAULT_CARD_SIZE.width + gap, 0);
     expect(computeMagneticTarget("a", [a, b(MAGNETIC_RANGE_PX)], [])).toBeNull();
     expect(computeMagneticTarget("a", [a, b(MAGNETIC_RANGE_PX - 0.1)], [])?.targetId).toBe("b");
-    // Overlapping cards (gap 0) with centers far under 260 apart still snap.
+    // Overlapping cards (gap 0) with centers far under the range apart still snap.
     expect(computeMagneticTarget("a", [a, cardOf("b", 0, 1, 50, 20)], [])?.targetId).toBe("b");
   });
 
   it("measures the gap between rectangles, not between centers", () => {
     const a = cardOf("a", 0, 0, 0, 0);
-    // Centers 500 apart (> 260) but rectangles only 160 apart.
-    const b = cardOf("b", 0, 1, DEFAULT_CARD_SIZE.width + 160, 0);
+    // Centers further apart than the range, but the rectangles only (range - 40) apart.
+    const b = cardOf("b", 0, 1, DEFAULT_CARD_SIZE.width + MAGNETIC_RANGE_PX - 40, 0);
     expect(Math.abs(a.position.x + 170 - (b.position.x + 170))).toBeGreaterThan(MAGNETIC_RANGE_PX);
     expect(computeMagneticTarget("a", [a, b], [])?.targetId).toBe("b");
   });

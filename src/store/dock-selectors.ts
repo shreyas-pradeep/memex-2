@@ -24,6 +24,15 @@ export const selectInspectedEdge = (s: MemexStore): AssociativeEdge | null =>
   s.inspectedEdgeId === null ? null : (s.edges.find((e) => e.id === s.inspectedEdgeId) ?? null);
 
 export const selectMagneticTarget = (s: MemexStore) => s.magneticTarget;
+/**
+ * True while the card is the one the dragged card would connect to. A boolean per
+ * card, so a drag frame (or a switch of offer between two other cards) re-renders
+ * only the cards whose answer changes: the old and the new target.
+ */
+export const selectIsMagneticTarget =
+  (cardId: string) =>
+  (s: MemexStore): boolean =>
+    s.magneticTarget !== null && s.magneticTarget.targetId === cardId;
 export const selectLastSnapEdgeId = (s: MemexStore): string | null => s.lastSnapEdgeId;
 
 /** True while the edge is the one the last magnetic snap created (for its one-time pulse). */

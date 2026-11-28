@@ -77,3 +77,16 @@ Phase A (the pure core, store, tests and spec) and Phase B (the React UI and wir
 - [x] 20. Verify and commit phase B **[B]**
   - Run `npx tsc --noEmit`, `npx vitest run`, `npx eslint src` and `npm run build`; commit the UI as `feat(spec-09): implement research command dock, magnetic arcs, cassettes and vault menu`.
   - _Requirements: all_
+## Task group 6: Magnetic calibration (range 380, floor 0.55, isolation, ring)
+- [x] 21. Calibrate range and affinity
+  - `MAGNETIC_RANGE_PX` 260 to 380; `MAGNETIC_MIN_AFFINITY` 0.70 to 0.55 on a new magnetic scale: `magneticAffinity` (continuous ramp below the Ghost threshold up to the calibrated value at it, unchanged above), `pairMagneticAffinity` with the shared-concept-or-tag guard, `magneticRawCutoff`, `synthesizeSharedRationale` in `ghost-engine.ts`; `buildMagneticCandidates` uses them. The ghost scan is unchanged (snapshot test from commit 31452c8).
+  - _Requirements: 2.2, 2.3_
+- [x] 22. Single-card isolation
+  - `src/core/drag-isolation.ts` (`shouldIsolateDrag`, `isGroupModifierHeld`), `src/components/canvas/SingleCardDragIsolation.tsx` (capture-phase `pointerdown` on the `.react-flow` element, collapses the selection through `addSelectedNodes`), `onSelectionDragStart/Drag/Stop` forwarded to the magnetic glue in `MemexCanvas.tsx`.
+  - _Requirements: 2.6_
+- [x] 23. Overlay and target ring
+  - `MagneticArcOverlay.tsx` moved out of `ViewportPortal` into a root-level layer with filament and pill at `z-index: 50`, `pointer-events: none` on every wrapper; `flowToScreen` and `viewTransformAttribute` in `magnetic-arc.ts`. Target ring (`ring-2 ring-accent-ghost/60`, opacity pulse `memex-target-ring`) and haptic tick (`haptics.ts`) in `ArchivalCardNode.tsx`, driven by `selectIsMagneticTarget(cardId)`.
+  - _Requirements: 2.11, 7.5_
+- [x] 24. Tests, verify and commit
+  - Updated `vault-and-magnetic.property.test.ts` (P2 oracle and range constants) and `command-console.test.ts` (floor constant); added `magnetic-calibration.property.test.ts`, `drag-isolation.property.test.ts`, `ghost-scan-regression.test.ts`, `magnetic-isolation.test.ts`, `haptics.test.ts`. Commit `feat(spec-09): calibrate magnetic snapping range, affinity and target ring`. Not exercised in a real browser: the isolation timing, the overlay stacking and the ring pulse were checked against the installed React Flow source only.
+  - _Requirements: 2, 7_

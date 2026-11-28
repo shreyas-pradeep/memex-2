@@ -7,7 +7,12 @@ import { showToast } from "./useToastStore";
  * `useMemexStore` (Spec 09). Kept out of the component so the rules are testable.
  *
  * Only single-card drags take part: when React Flow drags a selection together,
- * `draggedCount` is greater than one and the session is cancelled. React Flow
+ * `draggedCount` is greater than one and the session is cancelled. `draggedCount`
+ * is the number of cards React Flow moves: `dragged.length` from the node callbacks,
+ * `nodes.length` from the selection callbacks (a drag grabbed on the box-selection
+ * rectangle). A plain press on a selected card collapses a multi-selection to that
+ * card first (`SingleCardDragIsolation`), so the count is 1; with Shift, Cmd or Ctrl
+ * held the group keeps moving together and gets no target. React Flow
  * writes the new position to the store BEFORE it calls `onNodeDrag` (and before
  * `onNodeDragStop`), so `updateMagneticDrag` and `endMagneticDrag` read it fresh.
  */

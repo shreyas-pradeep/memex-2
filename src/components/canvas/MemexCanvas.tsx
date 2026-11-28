@@ -21,6 +21,7 @@ import {
   useReactFlow,
   type EdgeTypes,
   type NodeTypes,
+  type SelectionDragHandler,
 } from "@xyflow/react";
 import { buildGhostEdges } from "@/core/ghost-engine";
 import { nextArchivalId } from "@/core/graph-engine";
@@ -58,6 +59,7 @@ import { MagneticArcOverlay } from "./MagneticArcOverlay";
 import { MicroficheCassetteOverlay } from "./MicroficheCassetteOverlay";
 import { ResearchCommandDock } from "./ResearchCommandDock";
 import { RetroToaster } from "./RetroToaster";
+import { SingleCardDragIsolation } from "./SingleCardDragIsolation";
 import { SprocketCrawler } from "./SprocketCrawler";
 import { VaultDropZone } from "./VaultDropZone";
 import { VaultMenu } from "./VaultMenu";
@@ -343,6 +345,18 @@ const onNodeDragStart: DragHandler = (_event, node, dragged) => magneticDragStar
 const onNodeDrag: DragHandler = (_event, node, dragged) => magneticDragMove(node.id, dragged.length);
 const onNodeDragStop: DragHandler = (_event, node, dragged) => void magneticDragStop(node.id, dragged.length);
 
+/**
+ * A drag started on the selection rectangle that React Flow draws after a box selection reports through the
+ * selection callbacks instead (no single dragged node). When the selection holds exactly one card, which
+ * `SingleCardDragIsolation` arranges for a plain press, that card takes part in magnetic snapping like any other.
+ */
+const onSelectionDragStart: SelectionDragHandler<MemexNode> = (_event, nodes) =>
+  magneticDragStart(nodes[0]?.id ?? "", nodes.length);
+const onSelectionDrag: SelectionDragHandler<MemexNode> = (_event, nodes) =>
+  magneticDragMove(nodes[0]?.id ?? "", nodes.length);
+const onSelectionDragStop: SelectionDragHandler<MemexNode> = (_event, nodes) =>
+  void magneticDragStop(nodes[0]?.id ?? "", nodes.length);
+
 /** Clicking a real edge (or a ghost edge) opens it in the Synapse tab of the dock. */
 const onEdgeClick = (_event: unknown, edge: AssociativeEdge): void => {
   const store = useMemexStore.getState();
@@ -378,6 +392,9 @@ const Flow = memo(function Flow() {
       onNodeDragStart={onNodeDragStart}
       onNodeDrag={onNodeDrag}
       onNodeDragStop={onNodeDragStop}
+      onSelectionDragStart={onSelectionDragStart}
+      onSelectionDrag={onSelectionDrag}
+      onSelectionDragStop={onSelectionDragStop}
       onEdgeClick={onEdgeClick}
       nodeTypes={nodeTypes}
       edgeTypes={edgeTypes}
@@ -421,6 +438,7 @@ const Flow = memo(function Flow() {
       <ArchivalHud />
       <VaultMenu />
       <MicroficheCassetteOverlay />
+      <SingleCardDragIsolation />
       <MagneticArcOverlay />
       <TrailCameraDirector />
       <TrailPlaybackDock />

@@ -286,6 +286,19 @@ body {
   animation: memex-arc-jitter 0.09s steps(1, end) infinite;
 }
 
+/* Magnetic target ring (Spec 09): the ring is a static box-shadow, only its opacity breathes. */
+@keyframes memex-target-ring {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+.memex-target-ring {
+  animation: memex-target-ring 1.4s ease-in-out infinite;
+}
 /* One-time pulse on the edge a magnetic snap just created (opacity only). */
 @keyframes memex-snap-pulse {
   0% {
@@ -323,6 +336,7 @@ body {
   }
   .memex-arc-core,
   .memex-arc-jitter,
+  .memex-target-ring,
   .memex-snap-pulse,
   .memex-rail-pulse {
     animation: none !important;

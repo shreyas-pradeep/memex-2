@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { distillSourceText } from "@/core/ingestion-engine";
 import { ghostDiscoveryId } from "@/core/ghost-engine";
-import { MAGNETIC_RANGE_PX } from "@/core/magnetic-engine";
+import { MAGNETIC_MIN_AFFINITY, MAGNETIC_RANGE_PX } from "@/core/magnetic-engine";
 import { BUNDLE_SCHEMA, validateAndImportBundle } from "@/core/vault-bundle";
 import type { AssociativeEdge, GhostDiscovery, MemexNode } from "@/core/types";
 import { saveUserGeminiKey, GEMINI_KEY_STORAGE } from "../ai-settings";
+import { selectIsMagneticTarget } from "../dock-selectors";
 import {
   selectIsSpotlightActive,
   selectNodeSpotlightDim,
@@ -113,7 +114,7 @@ describe("Spec 09 store", () => {
       store().updateMagneticDrag("a");
       const first = store().magneticTarget;
       expect(first).toMatchObject({ sourceId: "a", targetId: "b" });
-      expect(first?.affinity).toBeGreaterThanOrEqual(0.7);
+      expect(first?.affinity).toBeGreaterThanOrEqual(MAGNETIC_MIN_AFFINITY);
       expect(first?.rationale.length).toBeGreaterThan(0);
       // Frames that do not change the offer do not touch the store value.
       for (let i = 0; i < 20; i++) {
@@ -249,6 +250,57 @@ describe("Spec 09 store", () => {
       // Generous bound: dragTo itself maps 300+ cards per frame; no text analysis runs per frame.
       expect(performance.now() - started).toBeLessThan(3000);
       expect(store().magneticTarget === null || store().magneticTarget?.sourceId === "a").toBe(true);
+    });
+
+    it("a card within the new 380 px range offers a target; one beyond it does not", () => {
+      const at = (gap: number) => [card("a", 340 + gap, 0), card("b", 0, 0)];
+      loadScene(at(MAGNETIC_RANGE_PX - 1));
+      store().beginMagneticDrag("a");
+      store().updateMagneticDrag("a");
+      expect(store().magneticTarget?.targetId).toBe("b");
+      store().cancelMagneticDrag();
+      loadScene(at(MAGNETIC_RANGE_PX));
+      store().beginMagneticDrag("a");
+      store().updateMagneticDrag("a");
+      expect(store().magneticTarget).toBeNull();
+    });
+
+    it("offers a sub-threshold pair that shares tags, with the shared-evidence rationale and a 68% whisper", () => {
+      const a = card("a", 340 + 100, 0, { title: "banana a", content: "banana river oven lantern", tags: ["alpha", "beta", "gamma"] });
+      const b = card("b", 0, 0, { title: "quartz b", content: "quartz harbor meadow velvet", tags: ["alpha", "beta", "delta"] });
+      loadScene([a, b]);
+      store().beginMagneticDrag("a");
+      store().updateMagneticDrag("a");
+      const offer = store().magneticTarget;
+      expect(offer).toMatchObject({ sourceId: "a", targetId: "b", concept: "alpha" });
+      expect(Math.round((offer?.affinity ?? 0) * 100)).toBe(68);
+      expect(offer?.rationale).toBe('"banana a" and "quartz b" were never linked. Shared tags: alpha and beta.');
+      // The snap stores that affinity and rationale on the edge.
+      expect(store().endMagneticDrag("a").snapped).toBe(true);
+      expect(store().edges[0].data).toMatchObject({ strength: offer?.affinity, rationale: offer?.rationale });
+    });
+
+    it("selectIsMagneticTarget is true only for the offered card, so other cards never re-render for an offer", () => {
+      loadScene([card("a", 400, 0), card("b", 0, 0), card("c", 0, 600, {}, false)]);
+      expect(selectIsMagneticTarget("b")(store())).toBe(false);
+      store().beginMagneticDrag("a");
+      store().updateMagneticDrag("a");
+      expect(store().magneticTarget?.targetId).toBe("b");
+      expect(selectIsMagneticTarget("b")(store())).toBe(true);
+      expect(selectIsMagneticTarget("a")(store())).toBe(false);
+      expect(selectIsMagneticTarget("c")(store())).toBe(false);
+      let flips = 0;
+      const unsubscribe = useMemexStore.subscribe((s, prev) => {
+        if (selectIsMagneticTarget("c")(s) !== selectIsMagneticTarget("c")(prev)) flips++;
+      });
+      for (let i = 0; i < 10; i++) {
+        dragTo("a", 400 + i, 0);
+        store().updateMagneticDrag("a");
+      }
+      unsubscribe();
+      expect(flips).toBe(0);
+      store().cancelMagneticDrag();
+      expect(selectIsMagneticTarget("b")(store())).toBe(false);
     });
 
     it("is session-only: never in the exports or in localStorage", () => {

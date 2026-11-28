@@ -1,0 +1,287 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`Ghost scan on the demo seed is unchanged by the magnetic affinity scale > detectGhostSynapses output (ids, rationale, confidence) matches the pre-change snapshot 1`] = `
+[
+  {
+    "confidence": 0.96,
+    "discoveredAt": "1945-07-01T00:00:00.000Z",
+    "id": "gd-11:MEM-1945-01:MEM-2026-07",
+    "rationale": ""Vannevar Bush: The Associative Trail Hypothesis" and "Working Hypothesis: Spatial Gestalt as Working Memory Bridge" were never linked. Cards share a high-affinity conceptual nexus across associative linking, organizing knowledge and memory and storage bridging theoretical origins with modern empirical implementations. Shared terms: work, associative, hypothesi and memex. Temporal link: the idea travels 81 years, from 1945 to 2026.",
+    "sourceId": "MEM-1945-01",
+    "targetId": "MEM-2026-07",
+  },
+  {
+    "confidence": 0.945,
+    "discoveredAt": "1945-07-01T00:00:00.000Z",
+    "id": "gd-11:MEM-1945-01:MEM-2024-05",
+    "rationale": ""Vannevar Bush: The Associative Trail Hypothesis" and "Microsoft Research: GraphRAG (From Local to Global)" were never linked. Hierarchical graph community traversal operationalizes Bush's non-linear associative web for LLM memory retrieval. Shared terms: retrieval. Temporal link: the idea travels 79 years, from 1945 to 2024. A note meets an artifact.",
+    "sourceId": "MEM-1945-01",
+    "targetId": "MEM-2024-05",
+  },
+  {
+    "confidence": 0.93,
+    "discoveredAt": "1945-07-01T00:00:00.000Z",
+    "id": "gd-11:MEM-1968-03:MEM-2026-07",
+    "rationale": ""Engelbart: NLS Human Augmentation Rig" and "Working Hypothesis: Spatial Gestalt as Working Memory Bridge" were never linked. Cards share a high-affinity conceptual nexus across cognitive augmentation and spatial layout bridging theoretical origins with modern empirical implementations. Shared terms: spatial, hci and conceptual. Temporal link: the idea travels 58 years, from 1968 to 2026. An artifact meets a note.",
+    "sourceId": "MEM-1968-03",
+    "targetId": "MEM-2026-07",
+  },
+  {
+    "confidence": 0.901,
+    "discoveredAt": "1945-07-01T00:00:00.000Z",
+    "id": "gd-11:MEM-1965-02:MEM-2026-07",
+    "rationale": ""Ted Nelson: Project Xanadu & Non-Linear Thought" and "Working Hypothesis: Spatial Gestalt as Working Memory Bridge" were never linked. Cards share a high-affinity conceptual nexus across associative linking and cognitive augmentation bridging theoretical origins with modern empirical implementations. Shared terms: project. Temporal link: the idea travels 61 years, from 1965 to 2026. A quote meets a note.",
+    "sourceId": "MEM-1965-02",
+    "targetId": "MEM-2026-07",
+  },
+  {
+    "confidence": 0.875,
+    "discoveredAt": "1945-07-01T00:00:00.000Z",
+    "id": "gd-11:MEM-1965-02:MEM-2024-05",
+    "rationale": ""Ted Nelson: Project Xanadu & Non-Linear Thought" and "Microsoft Research: GraphRAG (From Local to Global)" were never linked. Non-linear hypertext topology realized as multi-hop associative graph retrieval. Shared terms: text. Temporal link: the idea travels 59 years, from 1965 to 2024. A quote meets an artifact.",
+    "sourceId": "MEM-1965-02",
+    "targetId": "MEM-2024-05",
+  },
+]
+`;
+
+exports[`Ghost scan on the demo seed is unchanged by the magnetic affinity scale > raw pair scores and pairAffinity (0 below the threshold) match the snapshot 1`] = `
+[
+  {
+    "affinity": 0,
+    "pair": "MEM-1945-01|MEM-1965-02",
+    "score": 0.15581101651483298,
+    "sharedConcepts": [
+      "association",
+    ],
+  },
+  {
+    "affinity": 0,
+    "pair": "MEM-1945-01|MEM-1968-03",
+    "score": 0.040459978320815194,
+    "sharedConcepts": [],
+  },
+  {
+    "affinity": 0.96,
+    "pair": "MEM-1945-01|MEM-2017-04",
+    "score": 0.614413430518695,
+    "sharedConcepts": [
+      "association",
+      "memory",
+      "retrieval",
+    ],
+  },
+  {
+    "affinity": 0.945,
+    "pair": "MEM-1945-01|MEM-2024-05",
+    "score": 0.5507035018617583,
+    "sharedConcepts": [
+      "knowledge",
+      "memory",
+      "retrieval",
+    ],
+  },
+  {
+    "affinity": 0,
+    "pair": "MEM-1945-01|MEM-2024-06",
+    "score": 0,
+    "sharedConcepts": [],
+  },
+  {
+    "affinity": 0.96,
+    "pair": "MEM-1945-01|MEM-2026-07",
+    "score": 0.6492949453878987,
+    "sharedConcepts": [
+      "association",
+      "knowledge",
+      "memory",
+      "retrieval",
+    ],
+  },
+  {
+    "affinity": 0.872,
+    "pair": "MEM-1965-02|MEM-1968-03",
+    "score": 0.3059956659361476,
+    "sharedConcepts": [
+      "augmentation",
+      "machines",
+    ],
+  },
+  {
+    "affinity": 0.912,
+    "pair": "MEM-1965-02|MEM-2017-04",
+    "score": 0.4405582904320256,
+    "sharedConcepts": [
+      "association",
+      "machines",
+    ],
+  },
+  {
+    "affinity": 0.875,
+    "pair": "MEM-1965-02|MEM-2024-05",
+    "score": 0.3179338832725419,
+    "sharedConcepts": [
+      "hypergraph",
+    ],
+  },
+  {
+    "affinity": 0,
+    "pair": "MEM-1965-02|MEM-2024-06",
+    "score": 0,
+    "sharedConcepts": [],
+  },
+  {
+    "affinity": 0.901,
+    "pair": "MEM-1965-02|MEM-2026-07",
+    "score": 0.4031416885777549,
+    "sharedConcepts": [
+      "association",
+      "augmentation",
+    ],
+  },
+  {
+    "affinity": 0.923,
+    "pair": "MEM-1968-03|MEM-2017-04",
+    "score": 0.477476722010785,
+    "sharedConcepts": [
+      "machines",
+      "spatial",
+    ],
+  },
+  {
+    "affinity": 0,
+    "pair": "MEM-1968-03|MEM-2024-05",
+    "score": 0,
+    "sharedConcepts": [],
+  },
+  {
+    "affinity": 0,
+    "pair": "MEM-1968-03|MEM-2024-06",
+    "score": 0,
+    "sharedConcepts": [],
+  },
+  {
+    "affinity": 0.93,
+    "pair": "MEM-1968-03|MEM-2026-07",
+    "score": 0.5005066337429351,
+    "sharedConcepts": [
+      "augmentation",
+      "spatial",
+    ],
+  },
+  {
+    "affinity": 0,
+    "pair": "MEM-2017-04|MEM-2024-05",
+    "score": 0.21756001466286967,
+    "sharedConcepts": [
+      "memory",
+      "retrieval",
+    ],
+  },
+  {
+    "affinity": 0,
+    "pair": "MEM-2017-04|MEM-2024-06",
+    "score": 0.06813707625047818,
+    "sharedConcepts": [],
+  },
+  {
+    "affinity": 0.875,
+    "pair": "MEM-2017-04|MEM-2026-07",
+    "score": 0.31622776601683794,
+    "sharedConcepts": [
+      "association",
+      "memory",
+      "retrieval",
+      "spatial",
+    ],
+  },
+  {
+    "affinity": 0,
+    "pair": "MEM-2024-05|MEM-2024-06",
+    "score": 0.01769417610623781,
+    "sharedConcepts": [],
+  },
+  {
+    "affinity": 0,
+    "pair": "MEM-2024-05|MEM-2026-07",
+    "score": 0.2886751345948129,
+    "sharedConcepts": [
+      "graph",
+      "knowledge",
+      "memory",
+      "retrieval",
+    ],
+  },
+  {
+    "affinity": 0,
+    "pair": "MEM-2024-06|MEM-2026-07",
+    "score": 0.17677669529663687,
+    "sharedConcepts": [
+      "latent",
+    ],
+  },
+]
+`;
+
+exports[`Ghost scan on the demo seed is unchanged by the magnetic affinity scale > synapse pill percentages are round(confidence * 100) of the unchanged confidences 1`] = `
+[
+  96,
+  95,
+  93,
+  90,
+  88,
+]
+`;
+
+exports[`Ghost scan on the demo seed is unchanged by the magnetic affinity scale > the unconnected-pair scan without edges matches the snapshot too 1`] = `
+[
+  {
+    "confidence": 0.96,
+    "discoveredAt": "1945-07-01T00:00:00.000Z",
+    "id": "gd-11:MEM-1945-01:MEM-2026-07",
+    "rationale": ""Vannevar Bush: The Associative Trail Hypothesis" and "Working Hypothesis: Spatial Gestalt as Working Memory Bridge" were never linked. Cards share a high-affinity conceptual nexus across associative linking, organizing knowledge and memory and storage bridging theoretical origins with modern empirical implementations. Shared terms: work, associative, hypothesi and memex. Temporal link: the idea travels 81 years, from 1945 to 2026.",
+    "sourceId": "MEM-1945-01",
+    "targetId": "MEM-2026-07",
+  },
+  {
+    "confidence": 0.96,
+    "discoveredAt": "1945-07-01T00:00:00.000Z",
+    "id": "gd-11:MEM-1945-01:MEM-2017-04",
+    "rationale": ""Vannevar Bush: The Associative Trail Hypothesis" and "Vaswani et al.: Scaled Dot-Product Attention" were never linked. Direct theoretical realization (an interpretation): Bush's associative trail selection reads as scaled dot-product key-value lookup in Transformer attention. Shared terms: trail, bush, retrieval and along. Temporal link: the idea travels 72 years, from 1945 to 2017.",
+    "sourceId": "MEM-1945-01",
+    "targetId": "MEM-2017-04",
+  },
+  {
+    "confidence": 0.945,
+    "discoveredAt": "1945-07-01T00:00:00.000Z",
+    "id": "gd-11:MEM-1945-01:MEM-2024-05",
+    "rationale": ""Vannevar Bush: The Associative Trail Hypothesis" and "Microsoft Research: GraphRAG (From Local to Global)" were never linked. Hierarchical graph community traversal operationalizes Bush's non-linear associative web for LLM memory retrieval. Shared terms: retrieval. Temporal link: the idea travels 79 years, from 1945 to 2024. A note meets an artifact.",
+    "sourceId": "MEM-1945-01",
+    "targetId": "MEM-2024-05",
+  },
+  {
+    "confidence": 0.93,
+    "discoveredAt": "1945-07-01T00:00:00.000Z",
+    "id": "gd-11:MEM-1968-03:MEM-2026-07",
+    "rationale": ""Engelbart: NLS Human Augmentation Rig" and "Working Hypothesis: Spatial Gestalt as Working Memory Bridge" were never linked. Cards share a high-affinity conceptual nexus across cognitive augmentation and spatial layout bridging theoretical origins with modern empirical implementations. Shared terms: spatial, hci and conceptual. Temporal link: the idea travels 58 years, from 1968 to 2026. An artifact meets a note.",
+    "sourceId": "MEM-1968-03",
+    "targetId": "MEM-2026-07",
+  },
+  {
+    "confidence": 0.923,
+    "discoveredAt": "1945-07-01T00:00:00.000Z",
+    "id": "gd-11:MEM-1968-03:MEM-2017-04",
+    "rationale": ""Engelbart: NLS Human Augmentation Rig" and "Vaswani et al.: Scaled Dot-Product Attention" were never linked. Cards share a high-affinity conceptual nexus across computing machines and spatial layout bridging theoretical origins with modern empirical implementations. Shared terms: key. Temporal link: the idea travels 49 years, from 1968 to 2017. An artifact meets a note.",
+    "sourceId": "MEM-1968-03",
+    "targetId": "MEM-2017-04",
+  },
+  {
+    "confidence": 0.912,
+    "discoveredAt": "1945-07-01T00:00:00.000Z",
+    "id": "gd-11:MEM-1965-02:MEM-2017-04",
+    "rationale": ""Ted Nelson: Project Xanadu & Non-Linear Thought" and "Vaswani et al.: Scaled Dot-Product Attention" were never linked. Non-linear hypertext topology realized as multi-hop associative graph retrieval. Shared terms: read. Temporal link: the idea travels 52 years, from 1965 to 2017. A quote meets a note.",
+    "sourceId": "MEM-1965-02",
+    "targetId": "MEM-2017-04",
+  },
+]
+`;

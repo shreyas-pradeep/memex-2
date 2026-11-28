@@ -3,6 +3,7 @@
 import {
   memo,
   useCallback,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -11,14 +12,16 @@ import {
   type KeyboardEvent,
 } from "react";
 import { Handle, NodeResizer, Position, type NodeProps } from "@xyflow/react";
-import { motion, type Variants } from "framer-motion";
+import { motion, useReducedMotion, type Variants } from "framer-motion";
 import { combinedDimOpacity } from "@/core/spotlight";
 import { formatEventDate, parseEventDateInput } from "@/core/trail-engine";
 import { EDGE_COLORS, type MemexNode } from "@/core/types";
+import { selectIsMagneticTarget } from "@/store/dock-selectors";
 import { selectNodeSpotlightDim } from "@/store/spotlight-selectors";
 import { useNodeTrailState } from "@/store/trail-selectors";
 import { useMemexStore, type MemexStore } from "@/store/useMemexStore";
 import { SCANLINES, restShadow, rgba, skinFor } from "./card-skins";
+import { vibrateTargetTick } from "./haptics";
 import { TagInput, withPendingTags } from "./TagInput";
 
 /** GPU-composited microfilm tint (replaces the CPU-bound SVG duotone filter). */
@@ -216,10 +219,14 @@ function ArchivalCardNodeImpl({ id, data, selected }: NodeProps<MemexNode>) {
   // Spotlight (Spec 09): "off" | "match" | "dim", a primitive, so a drag frame never re-renders the card for it.
   const spotlightSelector = useMemo(() => selectNodeSpotlightDim(id), [id]);
   const spotlight = useMemexStore(spotlightSelector);
-  // Magnetic snapping (Spec 09): this card is the card the dragged one would connect to.
-  const magneticTarget = useMemexStore(
-    useCallback((s: MemexStore) => s.magneticTarget?.targetId === id, [id]),
-  );
+  // Magnetic snapping (Spec 09): a boolean for this card only, so a drag frame never re-renders it.
+  const magneticSelector = useMemo(() => selectIsMagneticTarget(id), [id]);
+  const magneticTarget = useMemexStore(magneticSelector);
+  const reducedMotion = useReducedMotion() === true;
+  // One haptic tick when this card becomes the target (never per frame: the boolean changes once per offer).
+  useEffect(() => {
+    if (magneticTarget) vibrateTargetTick(reducedMotion);
+  }, [magneticTarget, reducedMotion]);
   const eventLabel = formatEventDate(data);
   // The stronger dimmer wins (trail 0.2, spotlight 0.15). Spotlight-dimmed cards stay interactive.
   const cardOpacity = combinedDimOpacity(trailState, spotlight);
@@ -383,18 +390,20 @@ function ArchivalCardNodeImpl({ id, data, selected }: NodeProps<MemexNode>) {
             boxShadow: `0 0 0 1px ${rgba(accent, 0.7)}`,
           }}
         />
-        {/* Magnetic target: a static violet ring and glow, shown by opacity. */}
-        <span
-          aria-hidden="true"
-          data-magnetic-target={magneticTarget}
-          className="pointer-events-none absolute rounded-2xl"
-          style={{
-            ...overlayInset,
-            opacity: magneticTarget ? 1 : 0,
-            transition: "opacity 150ms ease",
-            boxShadow: `0 0 0 2px ${EDGE_COLORS.ghost}, 0 0 28px 4px ${rgba(EDGE_COLORS.ghost, 0.5)}`,
-          }}
-        />
+        {/*
+          Magnetic target: a static 2px ring (Tailwind ring = box-shadow) in the Ghost violet at 60%, shown only
+          while this card is the offered target. Its opacity pulses gently (`memex-target-ring`, opacity only);
+          under prefers-reduced-motion the ring stays steady. Absolutely positioned on the border edge like the
+          other overlays, so it adds no layout, and it ignores the pointer.
+        */}
+        {magneticTarget ? (
+          <span
+            aria-hidden="true"
+            data-magnetic-target="true"
+            className="memex-target-ring pointer-events-none absolute rounded-2xl ring-2 ring-accent-ghost/60"
+            style={overlayInset}
+          />
+        ) : null}
         {/* Hover glow: static box-shadow, revealed by an opacity transition. */}
         <span
           aria-hidden="true"

@@ -708,7 +708,9 @@ export const useMemexStore = create<MemexStore>()((set, get) => {
       cancelMagnetic();
       const hint = nodes.findIndex((n) => n.id === nodeId);
       if (hint === -1) return;
-      // React Flow drags every selected card together: no target for a group.
+      // React Flow drags every selected card together: no target for a group. A plain press collapses a
+      // multi-selection to the pressed card before the drag (SingleCardDragIsolation), so only a deliberate
+      // group drag (Shift/Cmd/Ctrl held) reaches this guard.
       if (nodes[hint].selected === true && nodes.filter((n) => n.selected === true).length > 1) return;
       const candidates = buildMagneticCandidates(nodeId, nodes, edges);
       const wanted = new Set(candidates.map((c) => c.targetId));
